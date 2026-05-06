@@ -447,22 +447,27 @@ inline void begin_flow_layout(const char* id, int column_count) {
 }
 
 template <typename draw_fn_t>
-inline void flow_panel(const char* name, int column_index, float height, draw_fn_t&& draw_fn) {
+inline void flow_panel(const char* name, int column_index, float height, draw_fn_t&& draw_fn, const bool auto_fit = true) {
   auto& state = current_flow_layout();
   if (!state.active || column_index < 0 || column_index >= static_cast<int>(state.column_offsets.size())) {
     return;
   }
 
+  ImGuiStorage* storage = ImGui::GetStateStorage();
+  const ImGuiID height_key = ImHashStr("flow_panel_height", 0, ImGui::GetID(name));
+  const float panel_height = auto_fit ? ImMax(height, storage->GetFloat(height_key, height)) : height;
   const ImVec2 position(
     state.origin.x + (static_cast<float>(column_index) * (state.column_width + k_gap)),
     state.origin.y + state.column_offsets[static_cast<size_t>(column_index)]);
 
   ImGui::SetCursorPos(position);
-  begin_panel(name, ImVec2(state.column_width, height));
+  begin_panel(name, ImVec2(state.column_width, panel_height));
   draw_fn();
-  end_panel();
+  const float required_height = end_panel_ex();
+  const float next_panel_height = auto_fit ? ImMax(height, ImCeil(required_height)) : height;
+  storage->SetFloat(height_key, next_panel_height);
 
-  state.column_offsets[static_cast<size_t>(column_index)] += height + k_gap;
+  state.column_offsets[static_cast<size_t>(column_index)] += panel_height + k_gap;
 }
 
 inline void end_flow_layout() {
@@ -1695,6 +1700,38 @@ static void draw_navbot_content() {
   cat_menu::end_flow_layout();
 }
 
+static void draw_region_selector_panel(const char* list_id) {
+  bool region_selector_changed = cat_menu::checkbox("Enable", &config.misc.automation.region_selector);
+
+  const float button_spacing = ImGui::GetStyle().ItemSpacing.x;
+  const float button_row_width = ImMax(0.0f, ImGui::GetContentRegionAvail().x - 10.0f);
+  const float button_width = ImMax(0.0f, ImFloor((button_row_width - button_spacing) * 0.5f));
+  if (cat_menu::accent_button("Allow all", ImVec2(button_width, 22.0f))) {
+    config.misc.automation.region_selector_allowed_mask = automation::region_selector::all_region_bits;
+    region_selector_changed = true;
+  }
+  ImGui::SameLine(0.0f, button_spacing);
+  if (cat_menu::accent_button("Block all", ImVec2(button_width, 22.0f), true)) {
+    config.misc.automation.region_selector_allowed_mask = 0;
+    region_selector_changed = true;
+  }
+
+  const float list_height = ImMax(1.0f, ImGui::GetContentRegionAvail().y - ImGui::GetStyle().ItemSpacing.y);
+  ImGui::BeginChild(list_id, ImVec2(-1.0f, list_height), false, ImGuiWindowFlags_NoBackground);
+  for (const auto& data_center : automation::region_selector::data_centers) {
+    bool allowed = automation::region_selector::is_region_bit_allowed(data_center.bit);
+    if (cat_menu::checkbox(data_center.label, &allowed)) {
+      automation::region_selector::set_region_allowed(data_center.bit, allowed);
+      region_selector_changed = true;
+    }
+  }
+  ImGui::EndChild();
+
+  if (region_selector_changed) {
+    automation::region_selector::refresh_ping_data();
+  }
+}
+
 static void draw_cat_bot_content() {
   const char* class_items[] = { "Undefined", "Scout", "Sniper", "Soldier", "Demoman", "Medic", "Heavy", "Pyro", "Spy", "Engineer" };
   const char* queue_mode_items[] = {
@@ -1757,35 +1794,8 @@ static void draw_cat_bot_content() {
     cat_menu::combo("Requeue action", (int*)&config.misc.automation.requeue_action, requeue_action_items, IM_ARRAYSIZE(requeue_action_items));
   });
   cat_menu::flow_panel("Region selector", 1, 360.0f, [&]() {
-    bool region_selector_changed = cat_menu::checkbox("Enable", &config.misc.automation.region_selector);
-
-    const float button_spacing = ImGui::GetStyle().ItemSpacing.x;
-    const float button_width = ImMax(0.0f, ImFloor((ImGui::GetContentRegionAvail().x - button_spacing) * 0.5f));
-    if (cat_menu::accent_button("Allow all", ImVec2(button_width, 22.0f))) {
-      config.misc.automation.region_selector_allowed_mask = automation::region_selector::all_region_bits;
-      region_selector_changed = true;
-    }
-    ImGui::SameLine(0.0f, button_spacing);
-    if (cat_menu::accent_button("Block all", ImVec2(ImGui::GetContentRegionAvail().x, 22.0f), true)) {
-      config.misc.automation.region_selector_allowed_mask = 0;
-      region_selector_changed = true;
-    }
-
-    const float list_height = ImMax(1.0f, ImGui::GetContentRegionAvail().y - ImGui::GetStyle().ItemSpacing.y);
-    ImGui::BeginChild("##region_selector_list", ImVec2(-1.0f, list_height), false, ImGuiWindowFlags_NoBackground);
-    for (const auto& data_center : automation::region_selector::data_centers) {
-      bool allowed = automation::region_selector::is_region_bit_allowed(data_center.bit);
-      if (cat_menu::checkbox(data_center.label, &allowed)) {
-        automation::region_selector::set_region_allowed(data_center.bit, allowed);
-        region_selector_changed = true;
-      }
-    }
-    ImGui::EndChild();
-
-    if (region_selector_changed) {
-      automation::region_selector::refresh_ping_data();
-    }
-  });
+    draw_region_selector_panel("##region_selector_list");
+  }, false);
   cat_menu::flow_panel("Utilities", 1, 248.0f, [&]() {
     cat_menu::checkbox("Anti AFK", &config.misc.automation.anti_afk);
     cat_menu::checkbox("Anti autobalance", &config.misc.automation.anti_autobalance);
@@ -1888,35 +1898,8 @@ static void draw_queue_content() {
     cat_menu::combo("Requeue action", (int*)&config.misc.automation.requeue_action, requeue_action_items, IM_ARRAYSIZE(requeue_action_items));
   });
   cat_menu::flow_panel("Region selector", 2, 390.0f, [&]() {
-    bool region_selector_changed = cat_menu::checkbox("Enable", &config.misc.automation.region_selector);
-
-    const float button_spacing = ImGui::GetStyle().ItemSpacing.x;
-    const float button_width = ImMax(0.0f, ImFloor((ImGui::GetContentRegionAvail().x - button_spacing) * 0.5f));
-    if (cat_menu::accent_button("Allow all", ImVec2(button_width, 22.0f))) {
-      config.misc.automation.region_selector_allowed_mask = automation::region_selector::all_region_bits;
-      region_selector_changed = true;
-    }
-    ImGui::SameLine(0.0f, button_spacing);
-    if (cat_menu::accent_button("Block all", ImVec2(ImGui::GetContentRegionAvail().x, 22.0f), true)) {
-      config.misc.automation.region_selector_allowed_mask = 0;
-      region_selector_changed = true;
-    }
-
-    const float list_height = ImMax(1.0f, ImGui::GetContentRegionAvail().y - ImGui::GetStyle().ItemSpacing.y);
-    ImGui::BeginChild("##queue_region_selector_list", ImVec2(-1.0f, list_height), false, ImGuiWindowFlags_NoBackground);
-    for (const auto& data_center : automation::region_selector::data_centers) {
-      bool allowed = automation::region_selector::is_region_bit_allowed(data_center.bit);
-      if (cat_menu::checkbox(data_center.label, &allowed)) {
-        automation::region_selector::set_region_allowed(data_center.bit, allowed);
-        region_selector_changed = true;
-      }
-    }
-    ImGui::EndChild();
-
-    if (region_selector_changed) {
-      automation::region_selector::refresh_ping_data();
-    }
-  });
+    draw_region_selector_panel("##queue_region_selector_list");
+  }, false);
   cat_menu::end_flow_layout();
 }
 
