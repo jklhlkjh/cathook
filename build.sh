@@ -299,13 +299,14 @@ build_cat() {
 
     case "$mode" in
         default)
-            make -C "$project_root"
+            make -C "$project_root" CATHOOK_DEBUG_SYMBOLS=1
             ;;
         textmode)
             make -C "$project_root" TEXTMODE=1
             ;;
         both)
-            make -C "$project_root" both
+            make -C "$project_root" CATHOOK_DEBUG_SYMBOLS=1
+            make -C "$project_root" TEXTMODE=1
             ;;
     esac
 

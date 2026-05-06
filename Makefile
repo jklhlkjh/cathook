@@ -15,6 +15,12 @@ CPPFLAGS += -DGIT_COMMIT_HASH=\"$(shell git rev-parse --short HEAD 2>/dev/null |
 CPPFLAGS += -DGIT_COMMITTER_DATE=\"$(shell git log -1 --format=%cd --date=short 2>/dev/null || date +%Y-%m-%d)\"
 CXXFLAGS ?= -std=c++23 -g --no-gnu-unique -pthread -fPIC
 DEPFLAGS = -MMD -MP
+CATHOOK_DEBUG_SYMBOLS ?= 0
+
+ifeq ($(CATHOOK_DEBUG_SYMBOLS),1)
+CXXFLAGS += -g3 -ggdb3 -fno-omit-frame-pointer -fno-optimize-sibling-calls
+LDFLAGS += -Wl,--build-id=sha1
+endif
 
 ifeq ($(TEXTMODE),1)
 CPPFLAGS += -DCATHOOK_TEXTMODE=1
