@@ -107,6 +107,10 @@ Keep code simple, direct, and consistent with the existing style:
 * Prefer small focused functions and POD-style data where practical.
 * Keep platform-specific behavior isolated.
 
+## Community
+
+Discord: https://discord.gg/pQmvJPUwdJ
+
 ## Credits
 
 This project is based on cathook and the Linux TF2 internal work it builds on, including [TeamFortress2-Linux-Internal](https://github.com/Doctor-Coomer/TeamFortress2-Linux-Internal). <br>
