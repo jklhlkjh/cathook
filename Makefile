@@ -28,7 +28,7 @@ endif
 BIN = $(OUTPUT_DIR)/$(BIN_NAME)
 OBJ_DIR = obj/$(BUILD_MODE)
 
-LDFLAGS += -shared -z execstack -g -pthread
+LDFLAGS += -shared -Wl,-z,noexecstack -g -pthread
 LDFLAGS += -Wl,-rpath,'$$ORIGIN' -Wl,-rpath,/usr/lib -Wl,-rpath,/usr/lib64 -Wl,-rpath,/run/host/usr/lib -Wl,-rpath,/run/host/usr/lib64
 LDLIBS += -lGLEW -lGL -lSDL2 -lvulkan libs/funchook/libfunchook.a libs/funchook/libdistorm.a
 
