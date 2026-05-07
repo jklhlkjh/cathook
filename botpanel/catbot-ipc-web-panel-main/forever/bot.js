@@ -14,17 +14,21 @@ const CATHOOK_ROOT = process.env.CATHOOK_ROOT || '/opt/cathook';
 const BOT_DISPLAY = process.env.DISPLAY || ':1';
 const BOT_XAUTHORITY = process.env.XAUTHORITY || path.join(process.env.HOME || '', '.Xauthority');
 const VISIBLE_WINDOWS = process.env.CAT_VISIBLE_WINDOWS === '1';
+const TEXTMODE_GAME = process.env.CAT_TEXTMODE_GAME === '1' || (!VISIBLE_WINDOWS && process.env.CAT_TEXTMODE_GAME !== '0');
 const GDB_CRASH_REPORTS = process.env.CAT_GDB_CRASH_REPORTS === '1' || config.gdb_crash_reports === true;
 const STEAM_WINDOW_OPTIONS = VISIBLE_WINDOWS
     ? '-noreactlogin'
     : '-silent -noreactlogin -cef-disable-gpu -nominidumps -nobreakpad -no-browser -nofriendsui -noasync -nofasthtml -noshaders -oldtraymenu -skipstreamingdrivers -nochatui';
-const GAME_WINDOW_OPTIONS = VISIBLE_WINDOWS ? '-sw -w 1024 -h 768' : '-silent -sw -w 1 -h 480';
+const GAME_WINDOW_OPTIONS = VISIBLE_WINDOWS ? '-sw -w 1280 -h 720' : '-silent -sw -w 1 -h 480';
 const GAME_RENDER_OPTIONS = '-gl';
+const GAME_MODE_OPTIONS = TEXTMODE_GAME
+    ? '-noshaderapi -nomouse -textmode -wavonly'
+    : '';
 const CATHOOK_ATTACH_DELAY_SECONDS = Number.parseInt(process.env.CATHOOK_ATTACH_DELAY_SECONDS || '5', 10);
 
 const LAUNCH_OPTIONS_STEAM = `firejail --dns=1.1.1.1 %NETWORK% --noprofile --private="%HOME%" --name=%JAILNAME% --env=PULSE_SERVER="unix:/tmp/pulse.sock" --env=DISPLAY=%DISPLAY% --env=XAUTHORITY=%XAUTHORITY% --env=LD_PRELOAD=%LD_PRELOAD% %STEAM% ${STEAM_WINDOW_OPTIONS} -login %LOGIN% %PASSWORD%`
 const LAUNCH_OPTIONS_STEAM_RESET = 'firejail --net=none --noprofile --private="%HOME%" %STEAM% --reset'
-const LAUNCH_OPTIONS_GAME = `firejail --join=%JAILNAME% bash -c 'cd "%GAMEPATH%" && %RUNTIME_PREFIX% SteamAppId=440 SteamGameId=440 SteamOverlayGameId=440 SteamEnv=1 CATHOOK_AUTO_ATTACH=1 CATHOOK_ATTACH_DELAY_SECONDS=%CATHOOK_ATTACH_DELAY_SECONDS% CAT_BOT_ID=%BOT_ID% CAT_BOT_NAME=%BOT_NAME% CAT_STEAMID32=%STEAMID32% LD_PRELOAD=%LD_PRELOAD% DISPLAY=%DISPLAY% XAUTHORITY="%XAUTHORITY%" PULSE_SERVER="unix:/tmp/pulse.sock" %GAME_BINARY% -steam -game tf ${GAME_RENDER_OPTIONS} ${GAME_WINDOW_OPTIONS} -novid -nojoy -noipx -noshaderapi -nomouse -nomessagebox -nominidumps -nohltv -nobreakpad -reuse -noquicktime -precachefontchars -particles 1 -snoforceformat -softparticlesdefaultoff -textmode -wavonly -forcenovsync -insecure +clientport 27006-27014'`
+const LAUNCH_OPTIONS_GAME = `firejail --join=%JAILNAME% bash -c 'cd "%GAMEPATH%" && %RUNTIME_PREFIX% SteamAppId=440 SteamGameId=440 SteamOverlayGameId=440 SteamEnv=1 CATHOOK_AUTO_ATTACH=1 CATHOOK_ATTACH_DELAY_SECONDS=%CATHOOK_ATTACH_DELAY_SECONDS% CAT_BOT_ID=%BOT_ID% CAT_BOT_NAME=%BOT_NAME% CAT_STEAMID32=%STEAMID32% LD_PRELOAD=%LD_PRELOAD% DISPLAY=%DISPLAY% XAUTHORITY="%XAUTHORITY%" PULSE_SERVER="unix:/tmp/pulse.sock" %GAME_BINARY% -steam -game tf ${GAME_RENDER_OPTIONS} ${GAME_WINDOW_OPTIONS} -novid -nojoy -noipx -nomessagebox -nominidumps -nohltv -nobreakpad -reuse -noquicktime -precachefontchars -particles 1 -snoforceformat -softparticlesdefaultoff ${GAME_MODE_OPTIONS} -forcenovsync -insecure +clientport 27006-27014'`
 const GAME_LIBRARY_PATH = './bin:./bin/linux64:./tf/bin:./tf/bin/linux64:./platform:./platform/bin:./platform/bin/linux64:.';
 
 // Adjust these values as needed to optimize catbot performance
@@ -118,6 +122,24 @@ function cathook_textmode_library() {
     }
 
     return candidates[0];
+}
+
+function cathook_graphical_library() {
+    const candidates = [
+        path.join(CATHOOK_ROOT, 'bin/libcathook.so'),
+        '/opt/cathook/bin/libcathook.so'
+    ];
+
+    for (const candidate of unique_paths(candidates)) {
+        if (fs.existsSync(candidate))
+            return candidate;
+    }
+
+    return candidates[0];
+}
+
+function cathook_game_library() {
+    return TEXTMODE_GAME ? cathook_textmode_library() : cathook_graphical_library();
 }
 
 function path_is_inside(child_path, parent_path) {
@@ -335,7 +357,7 @@ try {
 }
 
 console.log('Main user name: ' + USER.name);
-console.log('Visible windows: ' + (VISIBLE_WINDOWS ? 'yes' : 'no') + ', display: ' + BOT_DISPLAY);
+console.log('Visible windows: ' + (VISIBLE_WINDOWS ? 'yes' : 'no') + ', display: ' + BOT_DISPLAY + ', game_mode: ' + (TEXTMODE_GAME ? 'textmode' : 'graphical'));
 console.log('Bot runtime version: steam_login_wait_no_auto_assume_opengl_v1');
 
 class Bot extends EventEmitter {
@@ -372,6 +394,7 @@ class Bot extends EventEmitter {
         this.gameStarted = 0;
         this.gamePid = -1;
         this.gamePreloadLibrary = null;
+        this.xauthorityPath = BOT_XAUTHORITY;
         this.gdbSnapshotRunning = false;
         this.time_steamwebhelper_cleanup = 0;
         this.steamwebhelper_cleanup_done = false;
@@ -432,31 +455,36 @@ class Bot extends EventEmitter {
         console.log(`[${timestamp('HH:mm:ss')}][${this.name}][${this.state}] ${message}`);
     }
 
-    ensureSteamappsLink() {
-        if (fs.existsSync(this.steamApps))
-            return true;
+    shouldSetupSteamapps() {
+        try {
+            return fs.existsSync(this.steamApps) && !fs.lstatSync(this.steamApps).isSymbolicLink();
+        } catch (error) {
+            return false;
+        }
+    }
 
+    setupSteamapps() {
         if (!fs.existsSync('/opt/steamapps'))
             return false;
 
-        const steamapps_parent = path.dirname(this.steamApps);
-        const home_real_path = real_path_or_null(this.home);
-        const parent_real_path = real_path_or_null(steamapps_parent);
-        if (!home_real_path || (parent_real_path && !path_is_at_or_inside(parent_real_path, home_real_path))) {
-            this.log(`[ERROR] Refusing to create steamapps link outside bot home: ${this.steamApps}`);
-            return false;
+        if (this.shouldSetupSteamapps()) {
+            const backup_path = path.resolve(this.steamApps, '..', 'steamapps_old');
+            fs.rmSync(backup_path, { recursive: true, force: true });
+            fs.renameSync(this.steamApps, backup_path);
         }
 
-        fs.mkdirSync(steamapps_parent, { recursive: true });
-        fs.symlinkSync('/opt/steamapps/', this.steamApps);
+        if (!fs.existsSync(this.steamApps)) {
+            fs.mkdirSync(path.dirname(this.steamApps), { recursive: true });
+            fs.symlinkSync('/opt/steamapps/', this.steamApps);
+        }
+
         return true;
     }
 
-    steamRootPaths() {
+    steamInstallCandidates() {
         return [
             path.join(this.home, '.steam/steam'),
             path.join(this.home, '.steam/debian-installation'),
-            path.join(this.home, '.steam/root'),
             path.join(this.home, '.local/share/Steam')
         ];
     }
@@ -466,8 +494,12 @@ class Bot extends EventEmitter {
             return null;
 
         const wanted_login = String(this.account.login).toLowerCase();
-        for (const steam_root of this.steamRootPaths()) {
-            const login_users_path = path.join(steam_root, 'config/loginusers.vdf');
+        const login_users_paths = unique_paths([
+            this.steamPath ? path.join(this.steamPath, 'config/loginusers.vdf') : null,
+            ...this.steamInstallCandidates().map((steam_path) => path.join(steam_path, 'config/loginusers.vdf'))
+        ]);
+
+        for (const login_users_path of login_users_paths) {
             let text = '';
             try {
                 text = fs.readFileSync(login_users_path, 'utf8');
@@ -490,48 +522,35 @@ class Bot extends EventEmitter {
         return null;
     }
 
-    hostSteamRootPaths() {
-        return [
-            '/opt/CATHOOK_steam_root',
-            path.join(USER.home, '.steam/steam'),
-            path.join(USER.home, '.steam/debian-installation'),
-            path.join(USER.home, '.steam/root'),
-            path.join(USER.home, '.local/share/Steam')
-        ];
-    }
+    ensureVisibleXauthority() {
+        this.xauthorityPath = BOT_XAUTHORITY;
 
-    ensureSteamRootLinks() {
-        const steam_dir = path.join(this.home, '.steam');
-        ensure_directory_not_symlink(steam_dir);
+        if (!VISIBLE_WINDOWS)
+            return this.xauthorityPath;
 
-        const home_real_path = real_path_or_null(this.home);
-        for (const link_name of ['steam', 'root', 'debian-installation']) {
-            const link_path = path.join(steam_dir, link_name);
-            try {
-                const link_status = fs.lstatSync(link_path);
-                if (!link_status.isSymbolicLink())
-                    continue;
-
-                const link_real_path = real_path_or_null(link_path);
-                if (home_real_path && link_real_path && path_is_at_or_inside(link_real_path, home_real_path))
-                    continue;
-
-                fs.rmSync(link_path, { recursive: true, force: true });
-                fs.mkdirSync(link_path, { recursive: true });
-                chown_tree(link_path, USER.uid, USER.uid);
-                this.log(`Replaced unsafe Steam root symlink with local directory: ${link_path}`);
-            } catch (error) {
-                if (error.code !== 'ENOENT')
-                    this.log(`[ERROR] Failed to sanitize ${link_path}: ${error.message}`);
-            }
+        if (!BOT_XAUTHORITY || !fs.existsSync(BOT_XAUTHORITY)) {
+            this.log(`Visible windows requested but XAUTHORITY is missing: ${BOT_XAUTHORITY}`);
+            return this.xauthorityPath;
         }
+
+        const target_path = path.join(this.home, '.Xauthority');
+        try {
+            fs.mkdirSync(this.home, { recursive: true });
+            fs.copyFileSync(BOT_XAUTHORITY, target_path);
+            fs.chownSync(target_path, USER.uid, USER.uid);
+            this.xauthorityPath = target_path;
+        } catch (error) {
+            this.log(`Failed to copy XAUTHORITY for visible windows: ${error.message}`);
+        }
+
+        return this.xauthorityPath;
     }
 
     steamSdk64Source() {
-        const steam_roots = unique_paths([this.steamPath, ...this.hostSteamRootPaths(), ...this.steamRootPaths()]);
-        for (const steam_root of steam_roots) {
+        const steam_paths = unique_paths([this.steamPath, ...this.steamInstallCandidates()]);
+        for (const steam_path of steam_paths) {
             for (const sdk_dir_name of ['ubuntu12_64', 'linux64']) {
-                const sdk_dir = path.join(steam_root, sdk_dir_name);
+                const sdk_dir = path.join(steam_path, sdk_dir_name);
                 if (fs.existsSync(path.join(sdk_dir, 'steamclient.so')))
                     return fs.realpathSync(sdk_dir);
             }
@@ -567,7 +586,7 @@ class Bot extends EventEmitter {
     steamLogPaths() {
         var log_paths = ['./logs/' + this.name + '.steam.log'];
 
-        for (var steam_root of this.steamRootPaths()) {
+        for (var steam_root of this.steamInstallCandidates()) {
             log_paths.push(
                 path.join(steam_root, 'error.log'),
                 path.join(steam_root, 'logs/bootstrap_log.txt'),
@@ -615,64 +634,33 @@ class Bot extends EventEmitter {
     }
 
     markSteamReady(preferredSteamPath) {
-        this.ensureSteamRootLinks();
-        var candidates = [];
-        if (preferredSteamPath)
-            candidates.push(preferredSteamPath);
-        candidates.push(
-            path.join(this.home, '.steam/steam'),
-            path.join(this.home, '.steam/debian-installation'),
-            path.join(this.home, '.steam/root'),
-            path.join(this.home, '.local/share/Steam')
-        );
+        const candidates = unique_paths([preferredSteamPath, ...this.steamInstallCandidates()]);
+        const steam_path = candidates.find((candidate) => candidate && fs.existsSync(candidate)) || path.join(this.home, '.steam/steam');
+        const steamapps_path = path.join(steam_path, 'steamapps');
 
-        for (var candidate of candidates) {
-            if (candidate && fs.existsSync(candidate)) {
-                this.steamPath = candidate;
-                break;
-            }
+        try {
+            this.steamPath = path.resolve(this.home, path.relative(USER.home, fs.realpathSync(steam_path)));
+            this.steamApps = path.resolve(this.home, path.relative(USER.home, fs.realpathSync(steamapps_path)));
+        } catch (error) {
+            this.steamPath = steam_path;
+            this.steamApps = steamapps_path;
         }
 
-        if (!this.steamPath)
-            this.steamPath = path.join(this.home, '.steam/steam');
+        this.tf2Path = process.env.TF2_PATH || path.join(this.steamApps, 'common/Team Fortress 2');
+        this.setupSteamapps();
+        if (!tf2_install_ready(this.tf2Path) && tf2_install_ready('/opt/steamapps/common/Team Fortress 2'))
+            this.tf2Path = '/opt/steamapps/common/Team Fortress 2';
 
-        this.steamApps = path.join(this.steamPath, 'steamapps');
-        this.ensureSteamappsLink();
-
-        const tf2_candidates = [
-            process.env.TF2_PATH,
-            '/opt/steamapps/common/Team Fortress 2',
-            path.join(this.steamApps, 'common/Team Fortress 2'),
-            path.join(USER.home, '.steam/steam/steamapps/common/Team Fortress 2'),
-            path.join(USER.home, '.steam/debian-installation/steamapps/common/Team Fortress 2'),
-            path.join(USER.home, '.local/share/Steam/steamapps/common/Team Fortress 2')
-        ].filter(Boolean);
-        this.tf2Path = tf2_candidates.find(tf2_install_ready) || tf2_candidates[tf2_candidates.length - 1];
         this.repairSteamSdk64();
         this.isSteamWorking = true;
 
         if (!this.steamReadyLogged) {
-            this.log(`Steam ready, steam_path=${this.steamPath}, tf2_path=${this.tf2Path}`);
+            this.log(`Steam ready, steam_path=${this.steamPath}, steamapps=${this.steamApps}, tf2_path=${this.tf2Path}`);
             this.steamReadyLogged = true;
         }
     }
 
     gameLaunchPath() {
-        const host_steamapps_paths = [
-            path.join(USER.home, '.steam/steam/steamapps'),
-            path.join(USER.home, '.steam/debian-installation/steamapps'),
-            path.join(USER.home, '.local/share/Steam/steamapps')
-        ];
-
-        for (var steamapps_path of host_steamapps_paths) {
-            if (path_is_inside(this.tf2Path, steamapps_path)) {
-                const relative_path = path.relative(steamapps_path, this.tf2Path);
-                const opt_path = path.join('/opt/steamapps', relative_path);
-                if (tf2_install_ready(opt_path))
-                    return opt_path;
-            }
-        }
-
         const bot_relative_path = path.relative(this.home, this.tf2Path);
         if (path_is_inside(this.tf2Path, this.home))
             return path.join(USER.home, bot_relative_path);
@@ -739,6 +727,7 @@ class Bot extends EventEmitter {
             fs.mkdirSync(self.home);
             fs.chownSync(self.home, USER.uid, USER.uid);
         }
+        const xauthority_path = self.ensureVisibleXauthority();
         self.ensureSteamRootLinks();
 
         var steambin = this.nativeSteam ? "steam-native" : "steam";
@@ -753,7 +742,7 @@ class Bot extends EventEmitter {
             .replace("%LD_PRELOAD%", shell_quote(process.env.STEAM_LD_PRELOAD || ''))
             // XOrg Display
             .replace("%DISPLAY%", shell_quote(BOT_DISPLAY))
-            .replace("%XAUTHORITY%", shell_quote(BOT_XAUTHORITY))
+            .replace("%XAUTHORITY%", shell_quote(xauthority_path))
             // Network
             .replace("%NETWORK%", USER.SUPPORTS_FJ_NET ? `--net=${USER.interface}` : `--netns=catbotns${this.botid}`)
             // Home folder
@@ -845,7 +834,7 @@ class Bot extends EventEmitter {
         this.restarts++;
 
         var filename = `/tmp/.gl${makeid(6)}`;
-        const source_library = cathook_textmode_library();
+        const source_library = cathook_game_library();
         fs.copyFileSync(source_library, filename);
         fs.chmodSync(filename, 0o755);
         self.gamePreloadLibrary = filename;
@@ -884,7 +873,7 @@ class Bot extends EventEmitter {
             .replace("%LD_PRELOAD%", `"${game_preload}"`)
             // XORG display
             .replace("%DISPLAY%", BOT_DISPLAY)
-            .replace("%XAUTHORITY%", bash_double_quote_escape(BOT_XAUTHORITY)),
+            .replace("%XAUTHORITY%", bash_double_quote_escape(self.xauthorityPath)),
             [], self.spawnOptions);
         self.logGame = fs.createWriteStream('./logs/' + self.name + '.game.log');
         self.logGame.on('error', (err) => { self.log(`error on logGame pipe: ${err}`) });
