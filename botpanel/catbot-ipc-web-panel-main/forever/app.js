@@ -36,6 +36,17 @@ function parse_positive_integer(value) {
 	return number;
 }
 
+function set_config_value(option, raw_value) {
+	if (option === 'max_concurrent_bots') {
+		const value = parse_positive_integer(raw_value);
+		if (value === null)
+			return null;
+		return value;
+	}
+
+	return parse_config_value(raw_value);
+}
+
 class app {
 	constructor(app, cc) {
 		if (process.getuid() != 0) {
@@ -55,8 +66,14 @@ class app {
 			if (!config.hasOwnProperty(req.params.option))
 				res.status(404).end();
 			else {
+				const value = set_config_value(req.params.option, req.params.value);
+				if (value === null) {
+					res.status(400).send({ error: 'Invalid value' });
+					return;
+				}
+
 				console.log(`Switching ${req.params.option} to ${req.params.value}`)
-				config[req.params.option] = parse_config_value(req.params.value);
+				config[req.params.option] = value;
 				res.status(200).end('' + config[req.params.option]);
 			}
 		});

@@ -40,8 +40,6 @@ const TIMEOUT_STEAM_ASSUME_READY = Number.parseInt(process.env.CAT_STEAM_READY_S
 const STEAMWEBHELPER_CLEANUP_ENABLED = process.env.CAT_STEAMWEBHELPER_CLEANUP !== '0';
 const STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE = Number.parseInt(process.env.CAT_STEAMWEBHELPER_CLEANUP_SECONDS || '10', 10);
 const STEAMWEBHELPER_CLEANUP_DELAY = (Number.isFinite(STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) ? Math.max(0, STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) : 10) * 1000;
-// Maximum amount of concurrently starting bots
-let MAX_CONCURRENT_BOTS = 3;
 // Time to delay individual bot starts by to prevent IPC ID conflicts
 const DELAY_START_TIME = 1000;
 
@@ -163,6 +161,14 @@ function read_proc_stat(pid) {
     } catch (error) {
         return null;
     }
+}
+
+function max_concurrent_bots() {
+    const value = Number.parseInt(config.max_concurrent_bots, 10);
+    if (!Number.isSafeInteger(value) || value < 1)
+        return 1;
+
+    return value;
 }
 
 function read_proc_cmdline(pid) {
@@ -1196,7 +1202,7 @@ class Bot extends EventEmitter {
                         this.log(`Preparing to restart with account generation ${this.account_generation}...`);
                         this.account = accounts.get(this.botid, this.account_generation);
                     }
-                    if (this.account && module.exports.currentlyStartingGames < MAX_CONCURRENT_BOTS && module.exports.lastStartTime + DELAY_START_TIME < time) {
+                    if (this.account && module.exports.currentlyStartingGames < max_concurrent_bots() && module.exports.lastStartTime + DELAY_START_TIME < time) {
                         module.exports.lastStartTime = time;
                         module.exports.currentlyStartingGames++;
                         this.state = STATE.STARTING;
@@ -1247,8 +1253,7 @@ module.exports.bot = Bot;
 module.exports.currentlyStartingGames = 0;
 module.exports.lastStartTime = 0;
 module.exports.states = STATE;
-module.exports.MAX_CONCURRENT_BOTS = MAX_CONCURRENT_BOTS;
 Object.defineProperty(module.exports, 'MAX_CONCURRENT_BOTS', {
-    get: function() { return MAX_CONCURRENT_BOTS; },
-    set: function(value) { MAX_CONCURRENT_BOTS = value; }
+    get: function() { return max_concurrent_bots(); },
+    set: function(value) { config.max_concurrent_bots = value; }
 });
