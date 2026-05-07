@@ -1442,7 +1442,19 @@ static void draw_esp_content() {
 }
 
 static void draw_chams_content() {
-  const char* mats[] = { "None", "Flat", "Shaded", "Fresnel", "Glossy", "Additive" };
+  const char* mats[] = {
+    "None",
+    "Flat",
+    "Flat wireframe",
+    "Shaded",
+    "Shaded wireframe",
+    "Fresnel",
+    "Fresnel wireframe",
+    "Glossy",
+    "Glossy wireframe",
+    "Additive",
+    "Additive wireframe"
+  };
 
   cat_menu::begin_flow_layout("chams_layout", 3);
   cat_menu::flow_panel("Chams", 0, 388.0f, [&]() {
@@ -1462,13 +1474,8 @@ static void draw_chams_content() {
     cat_menu::checkbox("Team ignore z", &config.chams.player.team_flags.ignore_z);
   });
   cat_menu::flow_panel("Targets", 1, 170.0f, [&]() {
-    cat_menu::checkbox("Enemy wireframe", &config.chams.player.enemy_flags.wireframe);
-    cat_menu::checkbox("Team wireframe", &config.chams.player.team_flags.wireframe);
     cat_menu::checkbox("Friend ignore z", &config.chams.player.friends_flags.ignore_z);
-    cat_menu::checkbox("Friend wireframe", &config.chams.player.friends_flags.wireframe);
     cat_menu::checkbox("Enemy overlay ignore z", &config.chams.player.enemy_overlay_flags.ignore_z);
-    cat_menu::checkbox("Enemy overlay wireframe", &config.chams.player.enemy_overlay_flags.wireframe);
-    cat_menu::checkbox("Local wireframe", &config.chams.player.local_flags.wireframe);
   });
   cat_menu::flow_panel("Colors", 2, 160.0f, [&]() {
     cat_menu::color_picker("Enemy visible", config.chams.player.enemy_color.to_arr());
@@ -1508,10 +1515,13 @@ static void draw_glow_content() {
     cat_menu::checkbox("Distance fade", &config.glow.smooth_alpha);
     cat_menu::checkbox("Filled body", &config.glow.filled_body);
   });
-  cat_menu::flow_panel("Colors", 2, 168.0f, [&]() {
+  cat_menu::flow_panel("Colors", 2, 244.0f, [&]() {
     cat_menu::color_picker("Enemy visible", config.glow.player.enemy_color.to_arr());
+    cat_menu::color_picker("Enemy not visible", config.glow.player.enemy_color_z.to_arr());
     cat_menu::color_picker("Team visible", config.glow.player.team_color.to_arr());
+    cat_menu::color_picker("Team not visible", config.glow.player.team_color_z.to_arr());
     cat_menu::color_picker("Friend visible", config.glow.player.friend_color.to_arr());
+    cat_menu::color_picker("Friend not visible", config.glow.player.friend_color_z.to_arr());
     cat_menu::color_picker("Local color", config.glow.player.local_color.to_arr());
   });
   cat_menu::end_flow_layout();

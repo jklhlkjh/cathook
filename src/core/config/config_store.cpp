@@ -260,8 +260,11 @@ void config_store::import_config(const Config& config)
     set_bool("glow.player.friends", config.glow.player.friends);
     set_bool("glow.player.local", config.glow.player.local);
     set_color("glow.player.enemy_color", config.glow.player.enemy_color);
+    set_color("glow.player.enemy_color_z", config.glow.player.enemy_color_z);
     set_color("glow.player.team_color", config.glow.player.team_color);
+    set_color("glow.player.team_color_z", config.glow.player.team_color_z);
     set_color("glow.player.friend_color", config.glow.player.friend_color);
+    set_color("glow.player.friend_color_z", config.glow.player.friend_color_z);
     set_color("glow.player.local_color", config.glow.player.local_color);
 
     set_bool("chams.master", config.chams.master);
@@ -271,31 +274,26 @@ void config_store::import_config(const Config& config)
     set_color("chams.player.enemy_color_z", config.chams.player.enemy_color_z);
     set_int("chams.player.enemy_material_z_type", static_cast<int>(config.chams.player.enemy_material_z_type));
     set_bool("chams.player.enemy_flags.ignore_z", config.chams.player.enemy_flags.ignore_z);
-    set_bool("chams.player.enemy_flags.wireframe", config.chams.player.enemy_flags.wireframe);
     set_color("chams.player.enemy_overlay_color", config.chams.player.enemy_overlay_color);
     set_int("chams.player.enemy_overlay_material_type", static_cast<int>(config.chams.player.enemy_overlay_material_type));
     set_color("chams.player.enemy_overlay_color_z", config.chams.player.enemy_overlay_color_z);
     set_int("chams.player.enemy_overlay_material_z_type", static_cast<int>(config.chams.player.enemy_overlay_material_z_type));
     set_bool("chams.player.enemy_overlay_flags.ignore_z", config.chams.player.enemy_overlay_flags.ignore_z);
-    set_bool("chams.player.enemy_overlay_flags.wireframe", config.chams.player.enemy_overlay_flags.wireframe);
     set_bool("chams.player.team", config.chams.player.team);
     set_color("chams.player.team_color", config.chams.player.team_color);
     set_int("chams.player.team_material_type", static_cast<int>(config.chams.player.team_material_type));
     set_color("chams.player.team_color_z", config.chams.player.team_color_z);
     set_int("chams.player.team_material_z_type", static_cast<int>(config.chams.player.team_material_z_type));
     set_bool("chams.player.team_flags.ignore_z", config.chams.player.team_flags.ignore_z);
-    set_bool("chams.player.team_flags.wireframe", config.chams.player.team_flags.wireframe);
     set_bool("chams.player.friends", config.chams.player.friends);
     set_color("chams.player.friend_color", config.chams.player.friend_color);
     set_int("chams.player.friend_material_type", static_cast<int>(config.chams.player.friend_material_type));
     set_color("chams.player.friend_color_z", config.chams.player.friend_color_z);
     set_int("chams.player.friend_material_z_type", static_cast<int>(config.chams.player.friend_material_z_type));
     set_bool("chams.player.friends_flags.ignore_z", config.chams.player.friends_flags.ignore_z);
-    set_bool("chams.player.friends_flags.wireframe", config.chams.player.friends_flags.wireframe);
     set_bool("chams.player.local", config.chams.player.local);
     set_color("chams.player.local_color", config.chams.player.local_color);
     set_int("chams.player.local_material_type", static_cast<int>(config.chams.player.local_material_type));
-    set_bool("chams.player.local_flags.wireframe", config.chams.player.local_flags.wireframe);
 
     set_bool("visuals.removals.scope", config.visuals.removals.scope);
     set_bool("visuals.removals.zoom", config.visuals.removals.zoom);
@@ -636,8 +634,11 @@ void config_store::export_config(Config& config) const
     config.glow.player.friends = get_bool("glow.player.friends", config.esp.player.friends);
     config.glow.player.local = get_bool("glow.player.local", config.glow.player.local);
     config.glow.player.enemy_color = get_color("glow.player.enemy_color", config.esp.player.enemy_color);
+    config.glow.player.enemy_color_z = get_color("glow.player.enemy_color_z", config.glow.player.enemy_color);
     config.glow.player.team_color = get_color("glow.player.team_color", config.esp.player.team_color);
+    config.glow.player.team_color_z = get_color("glow.player.team_color_z", config.glow.player.team_color);
     config.glow.player.friend_color = get_color("glow.player.friend_color", config.esp.player.friend_color);
+    config.glow.player.friend_color_z = get_color("glow.player.friend_color_z", config.glow.player.friend_color);
     config.glow.player.local_color = get_color("glow.player.local_color", config.glow.player.local_color);
 
     config.chams.master = get_bool("chams.master", config.chams.master);
@@ -649,7 +650,6 @@ void config_store::export_config(Config& config) const
     config.chams.player.enemy_material_z_type = static_cast<Chams::Player::material_type>(
         get_int("chams.player.enemy_material_z_type", static_cast<int>(config.chams.player.enemy_material_z_type)));
     config.chams.player.enemy_flags.ignore_z = get_bool("chams.player.enemy_flags.ignore_z", config.chams.player.enemy_flags.ignore_z);
-    config.chams.player.enemy_flags.wireframe = get_bool("chams.player.enemy_flags.wireframe", config.chams.player.enemy_flags.wireframe);
     config.chams.player.enemy_overlay_color = get_color("chams.player.enemy_overlay_color", config.chams.player.enemy_overlay_color);
     config.chams.player.enemy_overlay_material_type = static_cast<Chams::Player::material_type>(
         get_int("chams.player.enemy_overlay_material_type", static_cast<int>(config.chams.player.enemy_overlay_material_type)));
@@ -657,7 +657,6 @@ void config_store::export_config(Config& config) const
     config.chams.player.enemy_overlay_material_z_type = static_cast<Chams::Player::material_type>(
         get_int("chams.player.enemy_overlay_material_z_type", static_cast<int>(config.chams.player.enemy_overlay_material_z_type)));
     config.chams.player.enemy_overlay_flags.ignore_z = get_bool("chams.player.enemy_overlay_flags.ignore_z", config.chams.player.enemy_overlay_flags.ignore_z);
-    config.chams.player.enemy_overlay_flags.wireframe = get_bool("chams.player.enemy_overlay_flags.wireframe", config.chams.player.enemy_overlay_flags.wireframe);
     config.chams.player.team = get_bool("chams.player.team", config.chams.player.team);
     config.chams.player.team_color = get_color("chams.player.team_color", config.chams.player.team_color);
     config.chams.player.team_material_type = static_cast<Chams::Player::material_type>(
@@ -666,7 +665,6 @@ void config_store::export_config(Config& config) const
     config.chams.player.team_material_z_type = static_cast<Chams::Player::material_type>(
         get_int("chams.player.team_material_z_type", static_cast<int>(config.chams.player.team_material_z_type)));
     config.chams.player.team_flags.ignore_z = get_bool("chams.player.team_flags.ignore_z", config.chams.player.team_flags.ignore_z);
-    config.chams.player.team_flags.wireframe = get_bool("chams.player.team_flags.wireframe", config.chams.player.team_flags.wireframe);
     config.chams.player.friends = get_bool("chams.player.friends", config.chams.player.friends);
     config.chams.player.friend_color = get_color("chams.player.friend_color", config.chams.player.friend_color);
     config.chams.player.friend_material_type = static_cast<Chams::Player::material_type>(
@@ -675,12 +673,10 @@ void config_store::export_config(Config& config) const
     config.chams.player.friend_material_z_type = static_cast<Chams::Player::material_type>(
         get_int("chams.player.friend_material_z_type", static_cast<int>(config.chams.player.friend_material_z_type)));
     config.chams.player.friends_flags.ignore_z = get_bool("chams.player.friends_flags.ignore_z", config.chams.player.friends_flags.ignore_z);
-    config.chams.player.friends_flags.wireframe = get_bool("chams.player.friends_flags.wireframe", config.chams.player.friends_flags.wireframe);
     config.chams.player.local = get_bool("chams.player.local", config.chams.player.local);
     config.chams.player.local_color = get_color("chams.player.local_color", config.chams.player.local_color);
     config.chams.player.local_material_type = static_cast<Chams::Player::material_type>(
         get_int("chams.player.local_material_type", static_cast<int>(config.chams.player.local_material_type)));
-    config.chams.player.local_flags.wireframe = get_bool("chams.player.local_flags.wireframe", config.chams.player.local_flags.wireframe);
 
     config.visuals.removals.scope = get_bool("visuals.removals.scope", config.visuals.removals.scope);
     config.visuals.removals.zoom = get_bool("visuals.removals.zoom", config.visuals.removals.zoom);

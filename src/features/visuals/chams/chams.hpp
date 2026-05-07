@@ -43,7 +43,9 @@ struct chams_settings {
   bool ignore_z = false;
   bool ignore_z_overlay = false;
   bool wireframe = false;
+  bool wireframe_z = false;
   bool wireframe_overlay = false;
+  bool wireframe_z_overlay = false;
   Material* material = nullptr;
   Material* material_z = nullptr;
   Material* material_overlay = nullptr;
@@ -179,8 +181,45 @@ static void set_material_information(Material* material, RGBA_float color, bool 
   model_render->forced_material_override(material, override_type);
 }
 
+[[nodiscard]] static size_t get_material_index(Chams::Player::material_type type) {
+  switch (type) {
+    case Chams::Player::material_type::none:
+      return 0;
+    case Chams::Player::material_type::flat:
+    case Chams::Player::material_type::flat_wireframe:
+      return 1;
+    case Chams::Player::material_type::shaded:
+    case Chams::Player::material_type::shaded_wireframe:
+      return 2;
+    case Chams::Player::material_type::fresnel:
+    case Chams::Player::material_type::fresnel_wireframe:
+      return 3;
+    case Chams::Player::material_type::glossy:
+    case Chams::Player::material_type::glossy_wireframe:
+      return 4;
+    case Chams::Player::material_type::additive:
+    case Chams::Player::material_type::additive_wireframe:
+      return 5;
+    default:
+      return 0;
+  }
+}
+
+[[nodiscard]] static bool is_wireframe_material(Chams::Player::material_type type) {
+  switch (type) {
+    case Chams::Player::material_type::flat_wireframe:
+    case Chams::Player::material_type::shaded_wireframe:
+    case Chams::Player::material_type::fresnel_wireframe:
+    case Chams::Player::material_type::glossy_wireframe:
+    case Chams::Player::material_type::additive_wireframe:
+      return true;
+    default:
+      return false;
+  }
+}
+
 [[nodiscard]] static Material* get_material(Chams::Player::material_type type) {
-  const auto material_index = static_cast<size_t>(type);
+  const auto material_index = get_material_index(type);
   if (material_index >= materials.size()) {
     return nullptr;
   }
@@ -198,13 +237,15 @@ static void set_material_information(Material* material, RGBA_float color, bool 
     settings.color = config.chams.player.enemy_color;
     settings.color_z = config.chams.player.enemy_color_z;
     settings.ignore_z = config.chams.player.enemy_flags.ignore_z;
-    settings.wireframe = config.chams.player.enemy_flags.wireframe;
+    settings.wireframe = is_wireframe_material(config.chams.player.enemy_material_type);
+    settings.wireframe_z = is_wireframe_material(config.chams.player.enemy_material_z_type);
     settings.material = get_material(config.chams.player.enemy_material_type);
     settings.material_z = get_material(config.chams.player.enemy_material_z_type);
     settings.color_overlay = config.chams.player.enemy_overlay_color;
     settings.color_z_overlay = config.chams.player.enemy_overlay_color_z;
     settings.ignore_z_overlay = config.chams.player.enemy_overlay_flags.ignore_z;
-    settings.wireframe_overlay = config.chams.player.enemy_overlay_flags.wireframe;
+    settings.wireframe_overlay = is_wireframe_material(config.chams.player.enemy_overlay_material_type);
+    settings.wireframe_z_overlay = is_wireframe_material(config.chams.player.enemy_overlay_material_z_type);
     settings.material_overlay = get_material(config.chams.player.enemy_overlay_material_type);
     settings.material_z_overlay = get_material(config.chams.player.enemy_overlay_material_z_type);
   }
@@ -213,7 +254,8 @@ static void set_material_information(Material* material, RGBA_float color, bool 
     settings.color = config.chams.player.team_color;
     settings.color_z = config.chams.player.team_color_z;
     settings.ignore_z = config.chams.player.team_flags.ignore_z;
-    settings.wireframe = config.chams.player.team_flags.wireframe;
+    settings.wireframe = is_wireframe_material(config.chams.player.team_material_type);
+    settings.wireframe_z = is_wireframe_material(config.chams.player.team_material_z_type);
     settings.material = get_material(config.chams.player.team_material_type);
     settings.material_z = get_material(config.chams.player.team_material_z_type);
   }
@@ -222,7 +264,8 @@ static void set_material_information(Material* material, RGBA_float color, bool 
     settings.color = config.chams.player.friend_color;
     settings.color_z = config.chams.player.friend_color_z;
     settings.ignore_z = config.chams.player.friends_flags.ignore_z;
-    settings.wireframe = config.chams.player.friends_flags.wireframe;
+    settings.wireframe = is_wireframe_material(config.chams.player.friend_material_type);
+    settings.wireframe_z = is_wireframe_material(config.chams.player.friend_material_z_type);
     settings.material = get_material(config.chams.player.friend_material_type);
     settings.material_z = get_material(config.chams.player.friend_material_z_type);
   }
@@ -231,7 +274,8 @@ static void set_material_information(Material* material, RGBA_float color, bool 
     settings.color = config.chams.player.local_color;
     settings.color_z = RGBA_float{};
     settings.ignore_z = false;
-    settings.wireframe = config.chams.player.local_flags.wireframe;
+    settings.wireframe = is_wireframe_material(config.chams.player.local_material_type);
+    settings.wireframe_z = settings.wireframe;
     settings.material = get_material(config.chams.player.local_material_type);
     settings.material_z = settings.material;
   }
@@ -239,7 +283,7 @@ static void set_material_information(Material* material, RGBA_float color, bool 
   return settings;
 }
 
-static void run_chams_pass(void* me, void* state, ModelRenderInfo* pinfo, VMatrix* bone_to_world, RenderContext* render_context, Material* material, Material* material_z, RGBA_float color, RGBA_float color_z, bool ignore_z, bool wireframe, bool render_original_when_material_missing) {
+static void run_chams_pass(void* me, void* state, ModelRenderInfo* pinfo, VMatrix* bone_to_world, RenderContext* render_context, Material* material, Material* material_z, RGBA_float color, RGBA_float color_z, bool ignore_z, bool wireframe, bool wireframe_z, bool render_original_when_material_missing) {
   if (material == nullptr && material_z == nullptr) {
     if (render_original_when_material_missing) {
       draw_model_execute_original(me, state, pinfo, bone_to_world);
@@ -282,7 +326,7 @@ static void run_chams_pass(void* me, void* state, ModelRenderInfo* pinfo, VMatri
   render_context->set_stencil_test_mask(0xFF);
   render_context->set_depth_range(0, 0.2);
 
-  set_material_information(material_z, color_z, wireframe, true);
+  set_material_information(material_z, color_z, wireframe_z, true);
   draw_model_execute_original(me, state, pinfo, bone_to_world);
 
   render_context->set_stencil_enable(false);
@@ -302,8 +346,8 @@ static void apply_chams_settings(void* me, void* state, ModelRenderInfo* pinfo, 
     return;
   }
 
-  run_chams_pass(me, state, pinfo, bone_to_world, render_context, settings.material, settings.material_z, settings.color, settings.color_z, settings.ignore_z, settings.wireframe, true);
-  run_chams_pass(me, state, pinfo, bone_to_world, render_context, settings.material_overlay, settings.material_z_overlay, settings.color_overlay, settings.color_z_overlay, settings.ignore_z_overlay, settings.wireframe_overlay, false);
+  run_chams_pass(me, state, pinfo, bone_to_world, render_context, settings.material, settings.material_z, settings.color, settings.color_z, settings.ignore_z, settings.wireframe, settings.wireframe_z, true);
+  run_chams_pass(me, state, pinfo, bone_to_world, render_context, settings.material_overlay, settings.material_z_overlay, settings.color_overlay, settings.color_z_overlay, settings.ignore_z_overlay, settings.wireframe_overlay, settings.wireframe_z_overlay, false);
 }
 
 #endif

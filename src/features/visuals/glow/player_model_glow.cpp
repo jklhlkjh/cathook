@@ -46,6 +46,7 @@ struct glow_entity
 {
   Player* player = nullptr;
   RGBA_float color{};
+  RGBA_float color_z{};
 };
 
 struct cached_glow_attachment
@@ -186,6 +187,21 @@ scoped_rendering_flag::~scoped_rendering_flag()
   }
 
   return config.glow.player.enemy_color;
+}
+
+[[nodiscard]] RGBA_float player_glow_color_z(Player* player, Player* localplayer)
+{
+  if (player == localplayer) {
+    return config.glow.player.local_color;
+  }
+  if (player->is_friend()) {
+    return config.glow.player.friend_color_z;
+  }
+  if (player->get_team() == localplayer->get_team()) {
+    return config.glow.player.team_color_z;
+  }
+
+  return config.glow.player.enemy_color_z;
 }
 
 [[nodiscard]] bool should_store_player(Player* player, Player* localplayer)
@@ -520,6 +536,13 @@ void begin_model_glow(const bool ignore_z)
   render_view->set_color_modulation(&white);
   g_glow_color_material->set_material_flag(MATERIAL_VAR_IGNOREZ, ignore_z);
   model_render->forced_material_override(g_glow_color_material);
+}
+
+void set_model_glow_ignore_z(const bool ignore_z)
+{
+  if (g_glow_color_material != nullptr) {
+    g_glow_color_material->set_material_flag(MATERIAL_VAR_IGNOREZ, ignore_z);
+  }
 }
 
 void end_model_glow()
@@ -898,8 +921,10 @@ void store()
     }
 
     auto color = player_glow_color(player, localplayer);
+    auto color_z = player_glow_color_z(player, localplayer);
     color.a *= alpha;
-    g_entities.emplace_back(glow_entity{.player = player, .color = color});
+    color_z.a *= alpha;
+    g_entities.emplace_back(glow_entity{.player = player, .color = color, .color_z = color_z});
   }
 }
 
@@ -948,6 +973,12 @@ void render_second()
 
   second_begin(render_context);
   for (const auto& entity : g_entities) {
+    set_model_glow_ignore_z(true);
+    render_view->set_color_modulation(&entity.color_z);
+    render_view->set_blend(entity.color_z.a);
+    draw_player_model(entity.player);
+
+    set_model_glow_ignore_z(false);
     render_view->set_color_modulation(&entity.color);
     render_view->set_blend(entity.color.a);
     draw_player_model(entity.player);

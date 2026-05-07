@@ -346,24 +346,19 @@ inline void register_builtin_targets() {
   register_target("chams.player.enemy_material_type", "Enemy material", reinterpret_cast<int*>(&config.chams.player.enemy_material_type));
   register_target("chams.player.enemy_material_z_type", "Enemy z material", reinterpret_cast<int*>(&config.chams.player.enemy_material_z_type));
   register_target("chams.player.enemy_flags.ignore_z", "Enemy ignore z", &config.chams.player.enemy_flags.ignore_z);
-  register_target("chams.player.enemy_flags.wireframe", "Enemy wireframe", &config.chams.player.enemy_flags.wireframe);
   register_target("chams.player.team", "Team", &config.chams.player.team);
   register_target("chams.player.team_material_type", "Team material", reinterpret_cast<int*>(&config.chams.player.team_material_type));
   register_target("chams.player.team_material_z_type", "Team z material", reinterpret_cast<int*>(&config.chams.player.team_material_z_type));
   register_target("chams.player.team_flags.ignore_z", "Team ignore z", &config.chams.player.team_flags.ignore_z);
-  register_target("chams.player.team_flags.wireframe", "Team wireframe", &config.chams.player.team_flags.wireframe);
   register_target("chams.player.friends", "Friends", &config.chams.player.friends);
   register_target("chams.player.friend_material_type", "Friend material", reinterpret_cast<int*>(&config.chams.player.friend_material_type));
   register_target("chams.player.friend_material_z_type", "Friend z material", reinterpret_cast<int*>(&config.chams.player.friend_material_z_type));
   register_target("chams.player.friends_flags.ignore_z", "Friend ignore z", &config.chams.player.friends_flags.ignore_z);
-  register_target("chams.player.friends_flags.wireframe", "Friend wireframe", &config.chams.player.friends_flags.wireframe);
   register_target("chams.player.local", "Local", &config.chams.player.local);
   register_target("chams.player.local_material_type", "Local material", reinterpret_cast<int*>(&config.chams.player.local_material_type));
-  register_target("chams.player.local_flags.wireframe", "Local wireframe", &config.chams.player.local_flags.wireframe);
   register_target("chams.player.enemy_overlay_material_type", "Enemy overlay material", reinterpret_cast<int*>(&config.chams.player.enemy_overlay_material_type));
   register_target("chams.player.enemy_overlay_material_z_type", "Enemy overlay z material", reinterpret_cast<int*>(&config.chams.player.enemy_overlay_material_z_type));
   register_target("chams.player.enemy_overlay_flags.ignore_z", "Enemy overlay ignore z", &config.chams.player.enemy_overlay_flags.ignore_z);
-  register_target("chams.player.enemy_overlay_flags.wireframe", "Enemy overlay wireframe", &config.chams.player.enemy_overlay_flags.wireframe);
 
   register_target("visuals.removals.scope", "Remove scope", &config.visuals.removals.scope);
   register_target("visuals.removals.zoom", "Remove zoom", &config.visuals.removals.zoom);

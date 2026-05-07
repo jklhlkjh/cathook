@@ -211,15 +211,19 @@ struct Chams {
     enum class material_type {
       none,
       flat,
+      flat_wireframe,
       shaded,
+      shaded_wireframe,
       fresnel,
+      fresnel_wireframe,
       glossy,
-      additive
+      glossy_wireframe,
+      additive,
+      additive_wireframe
     };
 
     struct ChamFlags {      
       bool ignore_z = true;
-      bool wireframe = false;
     };
     
     RGBA_float enemy_color = {.r = .8, .g = 0.701960784, .b = .1, .a = 1};
@@ -250,7 +254,6 @@ struct Chams {
     bool local = false;
     RGBA_float local_color = {.r = 0, .g = 0.8, .b = 0.35, .a = 1};
     material_type local_material_type = material_type::shaded;
-    ChamFlags local_flags;
   } player;
 };
 
@@ -270,8 +273,11 @@ struct glow_config {
     bool local = false;
 
     RGBA_float enemy_color = {.r = 1, .g = 0.501960784, .b = 0, .a = 1};
+    RGBA_float enemy_color_z = {.r = 1, .g = 0.501960784, .b = 0, .a = 1};
     RGBA_float team_color = {.r = 1, .g = 1, .b = 1, .a = 1};
+    RGBA_float team_color_z = {.r = 1, .g = 1, .b = 1, .a = 1};
     RGBA_float friend_color = {.r = 0, .g = 0.862745098, .b = 0.31372549, .a = 1};
+    RGBA_float friend_color_z = {.r = 0, .g = 0.862745098, .b = 0.31372549, .a = 1};
     RGBA_float local_color = {.r = 0, .g = 0.8, .b = 0.35, .a = 1};
   } player;
 };
