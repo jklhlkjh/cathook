@@ -306,6 +306,42 @@ function copy_directory_contents(source_path, target_path) {
     }
 }
 
+function copy_steam_seed(source_path, target_path, is_root = true) {
+    const skip_entries = new Set(['appcache', 'config', 'logs', 'steamapps', 'steamapps_old', 'userdata']);
+
+    fs.mkdirSync(target_path, { recursive: true });
+    for (const entry of fs.readdirSync(source_path)) {
+        if (is_root && skip_entries.has(entry))
+            continue;
+
+        const source_entry = path.join(source_path, entry);
+        const target_entry = path.join(target_path, entry);
+        let source_stat = null;
+        try {
+            source_stat = fs.lstatSync(source_entry);
+        } catch (error) {
+            if (error.code === 'ENOENT')
+                continue;
+            throw error;
+        }
+
+        fs.rmSync(target_entry, { recursive: true, force: true });
+        try {
+            if (source_stat.isSymbolicLink()) {
+                fs.symlinkSync(fs.readlinkSync(source_entry), target_entry);
+            } else if (source_stat.isDirectory()) {
+                copy_steam_seed(source_entry, target_entry, false);
+            } else if (source_stat.isFile()) {
+                fs.copyFileSync(source_entry, target_entry);
+                fs.chmodSync(target_entry, source_stat.mode & 0o777);
+            }
+        } catch (error) {
+            if (error.code !== 'ENOENT')
+                throw error;
+        }
+    }
+}
+
 function chown_tree(target_path, uid, gid) {
     try {
         fs.chownSync(target_path, uid, gid);
@@ -456,6 +492,16 @@ class Bot extends EventEmitter {
         return true;
     }
 
+    botSteamPath(steam_path) {
+        try {
+            const real_steam_path = fs.realpathSync(steam_path);
+            if (real_steam_path === USER.home || path_is_inside(real_steam_path, USER.home))
+                return path.resolve(this.home, path.relative(USER.home, real_steam_path));
+        } catch (error) { }
+
+        return steam_path;
+    }
+
     steamInstallCandidates() {
         return [
             path.join(this.home, '.steam/steam'),
@@ -470,6 +516,45 @@ class Bot extends EventEmitter {
             path.join(USER.home, '.steam/debian-installation'),
             path.join(USER.home, '.local/share/Steam')
         ];
+    }
+
+    hostSteamInstallSource() {
+        return this.hostSteamInstallCandidates().find((steam_path) =>
+            steam_path &&
+            fs.existsSync(path.join(steam_path, 'steam.sh')) &&
+            fs.existsSync(path.join(steam_path, 'ubuntu12_32/steam'))
+        ) || null;
+    }
+
+    prepareDebianSteamInstall() {
+        const source_path = this.hostSteamInstallSource();
+        if (!source_path)
+            return;
+
+        const steam_config_path = path.join(this.home, '.steam');
+        const target_path = path.join(steam_config_path, 'debian-installation');
+        if (!fs.existsSync(path.join(target_path, 'steam.sh'))) {
+            this.log(`Seeding Steam client into bot home from ${source_path}`);
+            copy_steam_seed(source_path, target_path);
+            chown_tree(target_path, USER.uid, USER.uid);
+        }
+
+        fs.mkdirSync(steam_config_path, { recursive: true });
+        for (const link_name of ['steam', 'root']) {
+            const link_path = path.join(steam_config_path, link_name);
+            try {
+                const status = fs.lstatSync(link_path);
+                if (!status.isSymbolicLink() || fs.readlinkSync(link_path) !== 'debian-installation')
+                    fs.rmSync(link_path, { recursive: true, force: true });
+            } catch (error) {
+                if (error.code !== 'ENOENT')
+                    throw error;
+            }
+
+            if (!fs.existsSync(link_path))
+                fs.symlinkSync('debian-installation', link_path);
+        }
+        chown_tree(steam_config_path, USER.uid, USER.uid);
     }
 
     steamid32FromLoginUsers() {
@@ -620,7 +705,7 @@ class Bot extends EventEmitter {
         const candidates = unique_paths([preferredSteamPath, ...this.steamInstallCandidates()]);
         const steam_path = candidates.find((candidate) => candidate && fs.existsSync(candidate)) || path.join(this.home, '.steam/steam');
 
-        this.steamPath = steam_path;
+        this.steamPath = this.botSteamPath(steam_path);
         this.steamApps = path.join(this.steamPath, 'steamapps');
 
         this.tf2Path = process.env.TF2_PATH || path.join(this.steamApps, 'common/Team Fortress 2');
@@ -709,6 +794,7 @@ class Bot extends EventEmitter {
             fs.mkdirSync(self.home);
             fs.chownSync(self.home, USER.uid, USER.uid);
         }
+        self.prepareDebianSteamInstall();
         const xauthority_path = self.ensureVisibleXauthority();
 
         var steambin = this.nativeSteam ? "steam-native" : "steam";
