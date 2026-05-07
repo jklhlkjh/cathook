@@ -17,7 +17,8 @@ USERNAME:PASSWORD
 
 # Cat botpanel launcher
 
-`./botpanel/start` starts the headless bot display with xpra by default.
+`./botpanel/start` starts the headless bot display with xpra when available,
+or Xvfb on distros where xpra is not packaged.
 
 - Default display: `:100`
 - Override display: `CAT_XPRA_DISPLAY=:101 ./botpanel/start`
