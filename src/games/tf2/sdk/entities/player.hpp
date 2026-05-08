@@ -427,6 +427,16 @@ public:
     *reinterpret_cast<float*>(base + static_cast<std::uintptr_t>(yaw_offset)) = angles.y;
   }
 
+  Vec3& get_local_eye_angles(void) {
+    void** vtable = *(void***)this;
+    Vec3& (*get_local_eye_angles_fn)(void*) = (Vec3& (*)(void*))vtable[196];
+    return get_local_eye_angles_fn(this);
+  }
+
+  void set_local_eye_angles(const Vec3& angles) {
+    get_local_eye_angles() = angles;
+  }
+
   enum tf_class get_tf_class(void) {
     return (enum tf_class)*(int*)(this + 0x1BA0);
   }

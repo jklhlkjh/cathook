@@ -38,6 +38,7 @@ struct render_angle_state
 {
   Player* player = nullptr;
   Vec3 original_angles{};
+  Vec3 original_local_angles{};
   bool active = false;
 };
 
@@ -174,11 +175,13 @@ void begin_render_angles()
 
   render_angles.player = localplayer;
   render_angles.original_angles = localplayer->get_eye_angles();
+  render_angles.original_local_angles = localplayer->get_local_eye_angles();
   render_angles.active = true;
 
   Vec3 visible_angles = anti_aim::fake_angles();
   visible_angles.z = 0.0f;
   localplayer->set_eye_angles(visible_angles);
+  localplayer->set_local_eye_angles(visible_angles);
 }
 
 void end_render_angles()
@@ -189,6 +192,7 @@ void end_render_angles()
 
   if (render_angles.player != nullptr) {
     render_angles.player->set_eye_angles(render_angles.original_angles);
+    render_angles.player->set_local_eye_angles(render_angles.original_local_angles);
   }
 
   render_angles = {};

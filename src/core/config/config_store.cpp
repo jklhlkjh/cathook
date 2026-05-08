@@ -1031,8 +1031,8 @@ void config_store::export_config(Config& config) const
     config.misc.automation.navbot_look_at_path_speed = get_float("misc.automation.navbot_look_at_path_speed", config.misc.automation.navbot_look_at_path_speed);
     config.misc.automation.navbot_crumb_blacklist_seconds = std::clamp(
         get_float("misc.automation.navbot_crumb_blacklist_seconds", config.misc.automation.navbot_crumb_blacklist_seconds),
-        0.0f,
-        60.0f);
+        50.0f,
+        150.0f);
     config.misc.automation.navbot_debug_text = get_bool("misc.automation.navbot_debug_text", config.misc.automation.navbot_debug_text);
     config.misc.automation.navbot_excluded_jobs_mask = static_cast<uint32_t>(
         get_int("misc.automation.navbot_excluded_jobs_mask", static_cast<int>(config.misc.automation.navbot_excluded_jobs_mask)));

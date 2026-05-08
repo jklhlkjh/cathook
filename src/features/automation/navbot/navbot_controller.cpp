@@ -854,6 +854,9 @@ bool navbot_controller::record_crumb_failure(const follower_tick_result& follow_
     return false;
   }
 
+  auto blacklist_seconds = std::clamp(config.misc.automation.navbot_crumb_blacklist_seconds, 50.0f, 150.0f);
+  hazards_.refresh_crumb_blacklists(current_time, blacklist_seconds);
+
   auto same_failed_crumb = crumb_failure_.area_id.value == follow_result.failed_crumb_area.value
     && same_nav_edge(crumb_failure_.edge_id, follow_result.failed_edge);
   if (!same_failed_crumb || current_time - crumb_failure_.last_failure_time > blocked_fail_time)
@@ -872,13 +875,6 @@ bool navbot_controller::record_crumb_failure(const follower_tick_result& follow_
     return false;
   }
 
-  auto blacklist_seconds = std::clamp(config.misc.automation.navbot_crumb_blacklist_seconds, 0.0f, 60.0f);
-  if (blacklist_seconds <= 0.0f)
-  {
-    crumb_failure_.count = 0;
-    return false;
-  }
-
   hazards_.add_crumb_blacklist(follow_result.failed_crumb_area, follow_result.failed_edge, current_time, blacklist_seconds);
   crumb_failure_ = {};
   return true;
@@ -894,7 +890,14 @@ bool navbot_controller::should_block_pathing(Player* localplayer) const
   auto map_name = mesh_.map_name().empty() ? loaded_map_name_ : mesh_.map_name();
   auto on_cp_or_pl_map = map_has_cp_or_pl_prefix(map_name);
   auto warmup_active = warmup_active_;
+  auto local_team = localplayer->get_team();
+  auto setup_active = round_started_ && on_cp_or_pl_map && !setup_finished_;
   auto match_fully_started = round_started_ && (!on_cp_or_pl_map || setup_finished_);
+
+  if (local_team == tf_team::BLU && setup_active)
+  {
+    return true;
+  }
 
   if (config.misc.automation.navbot_dont_path_unless_match_started && !match_fully_started)
   {
@@ -911,7 +914,7 @@ bool navbot_controller::should_block_pathing(Player* localplayer) const
     return true;
   }
 
-  return localplayer->get_team() == tf_team::BLU && on_cp_or_pl_map;
+  return local_team == tf_team::BLU && on_cp_or_pl_map;
 }
 
 void navbot_controller::on_create_move(user_cmd* user_cmd)

@@ -564,7 +564,7 @@ struct Misc {
     bool navbot_look_at_path = false;
     bool navbot_auto_weapon = true;
     float navbot_look_at_path_speed = 360.0f;
-    float navbot_crumb_blacklist_seconds = 8.0f;
+    float navbot_crumb_blacklist_seconds = 50.0f;
     bool navbot_debug_text = true;
     uint32_t navbot_excluded_jobs_mask = 0;
   } automation;
