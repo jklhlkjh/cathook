@@ -86,6 +86,7 @@ byte_patch particle_create_patch{};
 byte_patch particle_precache_patch{};
 byte_patch particle_effect_create_patch{};
 byte_patch view_render_patch{};
+byte_patch steam_rich_presence_patch{};
 
 bool has_extension(const char* filename, const char* extension)
 {
@@ -264,14 +265,15 @@ bool initialize_render_patches()
   auto* particle_precache = sigscan_module("client.so", sigs::particle_system_precache);
   auto* particle_effect_create = sigscan_module("client.so", sigs::particle_effect_create_event);
   auto* view_render = sigscan_module("client.so", sigs::view_render_render);
+  auto* steam_rich_presence = sigscan_module("client.so", sigs::client_update_steam_rich_presence);
 
   render_patches_initialized = true;
 
   if (play_sequence == nullptr || particle_create == nullptr || particle_precache == nullptr ||
-      particle_effect_create == nullptr || view_render == nullptr)
+      particle_effect_create == nullptr || view_render == nullptr || steam_rich_presence == nullptr)
   {
-    print("[nographics] render patch scan failed play_sequence=%p particle_create=%p particle_precache=%p particle_effect_create=%p view_render=%p\n",
-          play_sequence, particle_create, particle_precache, particle_effect_create, view_render);
+    print("[nographics] render patch scan failed play_sequence=%p particle_create=%p particle_precache=%p particle_effect_create=%p view_render=%p steam_rich_presence=%p\n",
+          play_sequence, particle_create, particle_precache, particle_effect_create, view_render, steam_rich_presence);
     render_patches_ready = false;
     return false;
   }
@@ -281,6 +283,7 @@ bool initialize_render_patches()
   particle_precache_patch = byte_patch(particle_precache, { 0x31, 0xC0, 0xC3 });
   particle_effect_create_patch = byte_patch(particle_effect_create, { 0x31, 0xC0, 0xC3 });
   view_render_patch = byte_patch(view_render, { 0xB0, 0x01, 0xC3 });
+  steam_rich_presence_patch = byte_patch(steam_rich_presence, { 0xC3 });
 
   render_patches_ready = true;
   return true;
@@ -297,7 +300,8 @@ void apply_render_patches()
                   particle_create_patch.apply() &&
                   particle_precache_patch.apply() &&
                   particle_effect_create_patch.apply() &&
-                  view_render_patch.apply();
+                  view_render_patch.apply() &&
+                  steam_rich_presence_patch.apply();
   if (!ok)
   {
     play_sequence_patch.restore();
@@ -305,6 +309,7 @@ void apply_render_patches()
     particle_precache_patch.restore();
     particle_effect_create_patch.restore();
     view_render_patch.restore();
+    steam_rich_presence_patch.restore();
     print("[nographics] render patch apply failed\n");
     return;
   }
@@ -324,6 +329,7 @@ void restore_render_patches()
   particle_precache_patch.restore();
   particle_effect_create_patch.restore();
   view_render_patch.restore();
+  steam_rich_presence_patch.restore();
   render_patches_applied = false;
 }
 

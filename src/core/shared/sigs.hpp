@@ -129,6 +129,8 @@ constexpr const char* particle_effect_create_event =
   "55 41 89 C9 48 89 E5 41 57 41 56 41 55 4D 89 C5 41 54 49 89 FC 53 48 81 EC ? ? ? ?";
 constexpr const char* view_render_render =
   "55 48 89 E5 41 57 41 56 41 55 41 54 53 48 81 EC ? ? ? ? 48 83 3F ?";
+constexpr const char* client_update_steam_rich_presence =
+  "55 48 89 E5 41 57 41 56 41 55 49 89 FD 41 54 53 48 81 EC ? ? ? ? 48 8B 1D ? ? ? ? 48 C7 85 ? ? ? ? ? ? ? ? 48 8B 3B 48 85 FF";
 
 } // namespace sigs
 
