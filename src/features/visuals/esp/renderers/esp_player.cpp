@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-03-30
 V  o o  V  file: src/features/visuals/esp/renderers/esp_player.cpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

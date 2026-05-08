@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-05-06
 V  o o  V  file: src/games/tf2/sdk/materials/texture.hpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

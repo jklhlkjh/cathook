@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-04-30
 V  o o  V  file: src/features/combat/random_crits/random_crits.hpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

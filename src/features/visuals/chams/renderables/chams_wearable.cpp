@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-04-06
 V  o o  V  file: src/features/visuals/chams/renderables/chams_wearable.cpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

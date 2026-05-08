@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-05-07
 V  o o  V  file: src/games/tf2/sdk/interfaces/steam_user.hpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

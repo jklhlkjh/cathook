@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-05-07
 V  o o  V  file: src/features/automation/medic_automation/medic_automation.cpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

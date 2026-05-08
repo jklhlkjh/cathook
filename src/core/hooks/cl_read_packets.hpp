@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-04-30
 V  o o  V  file: src/core/hooks/cl_read_packets.hpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-03-30
 V  o o  V  file: src/core/hooks/text_window_show_panel.cpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

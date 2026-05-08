@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-04-30
 V  o o  V  file: src/features/movement/engine_prediction/engine_prediction.cpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-04-05
 V  o o  V  file: src/games/tf2/sdk/aim_hitboxes.hpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-05-05
 V  o o  V  file: src/core/ipc/ipc_shared.hpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-05-01
 V  o o  V  file: src/features/combat/tickbase/tickbase.cpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

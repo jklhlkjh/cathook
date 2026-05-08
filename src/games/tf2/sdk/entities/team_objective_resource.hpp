@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-04-30
 V  o o  V  file: src/games/tf2/sdk/entities/team_objective_resource.hpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

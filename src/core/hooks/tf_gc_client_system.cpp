@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-05-08
 V  o o  V  file: src/core/hooks/tf_gc_client_system.cpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

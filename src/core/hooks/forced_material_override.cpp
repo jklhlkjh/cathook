@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-05-07
 V  o o  V  file: src/core/hooks/forced_material_override.cpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

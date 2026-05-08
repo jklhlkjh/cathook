@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-04-06
 V  o o  V  file: src/games/tf2/sdk/bitbuf.hpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

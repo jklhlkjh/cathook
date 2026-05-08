@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-05-01
 V  o o  V  file: src/games/tf2/sdk/net_messages.hpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

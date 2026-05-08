@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-04-02
 V  o o  V  file: src/core/detach.hpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

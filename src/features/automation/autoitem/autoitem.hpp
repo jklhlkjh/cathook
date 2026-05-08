@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-05-05
 V  o o  V  file: src/features/automation/autoitem/autoitem.hpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

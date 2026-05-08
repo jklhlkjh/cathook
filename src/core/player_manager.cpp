@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-05-06
 V  o o  V  file: src/core/player_manager.cpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

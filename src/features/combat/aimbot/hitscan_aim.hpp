@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-04-05
 V  o o  V  file: src/features/combat/aimbot/hitscan_aim.hpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \

@@ -1,7 +1,7 @@
 /*
 /^-----^\   data: 2026-04-05
 V  o o  V  file: src/features/automation/navbot/navbot_path.cpp
- |  Y  |   autor: pupnoodle
+ |  Y  |   author: pupnoodle
   \ Q /
   / - \
   |    \
