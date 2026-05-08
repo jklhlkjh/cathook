@@ -42,6 +42,7 @@ const STEAM_CLIENT_INITIALIZED_PATTERNS = [
     'Caching cursor image',
     'reaping pid:'
 ];
+const steam_client_initialized_game_delay = 20000;
 // How long to wait for the TF2 process to be created by firejail
 const TIMEOUT_START_GAME = 10000;
 // Timeout for cathook to connect to the IPC server once injected
@@ -618,6 +619,7 @@ class Bot extends EventEmitter {
         this.time_steamWorking = 0;
         this.time_steamAssumeReady = 0;
         this.time_game_launch = 0;
+        this.time_steam_client_initialized_game_launch = 0;
         this.time_gameCheck = 0;
         this.time_ipcState = 0;
         this.time_steamStatusLog = 0;
@@ -1025,6 +1027,8 @@ class Bot extends EventEmitter {
         if (!this.steamClientInitialized) {
             const first_line = String(log_text || '').split(/\r?\n/).find((line) => line.trim()) || 'Steam client activity marker';
             this.log(`Steam client initialized marker seen: ${first_line.trim()}`);
+            this.time_steam_client_initialized_game_launch = Date.now() + steam_client_initialized_game_delay;
+            this.log(`Delaying game launch for ${steam_client_initialized_game_delay / 1000} seconds after Steam client initialized marker.`);
         }
 
         this.steamClientInitialized = true;
@@ -1285,6 +1289,7 @@ class Bot extends EventEmitter {
 
         this.isSteamWorking = false;
         this.steamClientInitialized = false;
+        this.time_steam_client_initialized_game_launch = 0;
         this.time_steamwebhelper_cleanup = 0;
         this.steamwebhelper_cleanup_done = false;
         this.steamwebhelper_frozen_pid = -1;
@@ -1309,6 +1314,7 @@ class Bot extends EventEmitter {
         this.gameStarted = 0;
         this.gamePid = -1;
         this.time_game_launch = 0;
+        this.time_steam_client_initialized_game_launch = 0;
         this.time_gameCheck = 0;
         this.time_ipcState = 0;
         this.time_steamwebhelper_cleanup = 0;
@@ -1325,6 +1331,7 @@ class Bot extends EventEmitter {
         this.time_steamWorking = 0;
         this.time_steamAssumeReady = 0;
         this.time_game_launch = 0;
+        this.time_steam_client_initialized_game_launch = 0;
         this.time_gameCheck = 0;
         this.time_ipcState = 0;
         this.time_steamwebhelper_cleanup = 0;
@@ -1673,6 +1680,16 @@ class Bot extends EventEmitter {
                             return;
                         }
 
+                        if (this.time_steam_client_initialized_game_launch && time < this.time_steam_client_initialized_game_launch) {
+                            if (!this.time_steamStatusLog || time > this.time_steamStatusLog) {
+                                const remaining = Math.ceil((this.time_steam_client_initialized_game_launch - time) / 1000);
+                                this.log(`Steam client initialized; delaying game launch, remaining_seconds=${remaining}`);
+                                this.time_steamStatusLog = time + 10000;
+                            }
+                            return;
+                        }
+
+                        this.time_steam_client_initialized_game_launch = 0;
                         this.time_game_launch = 0;
                         this.spawnGame();
                         this.state = STATE.WAITING;
