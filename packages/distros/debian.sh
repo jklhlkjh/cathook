@@ -115,6 +115,7 @@ packages=(
     gdb \
     git \
     iproute2 \
+    libopenal1 \
     libglew-dev \
     libgl-dev \
     libsdl2-dev \

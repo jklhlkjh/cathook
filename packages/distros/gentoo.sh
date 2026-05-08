@@ -20,6 +20,7 @@ run_as_root emerge --ask=n --noreplace \
     dev-vcs/git \
     media-libs/glew \
     media-libs/libsdl2 \
+    media-libs/openal \
     net-misc/xpra \
     net-libs/nodejs \
     sys-devel/gcc \

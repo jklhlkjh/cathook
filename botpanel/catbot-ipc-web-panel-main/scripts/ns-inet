@@ -5,6 +5,28 @@
 botid=$1
 
 get_default_interface() {
+    local interface=""
+
+    if [[ -n "${CATHOOK_NET_INTERFACE:-}" ]]; then
+        printf '%s\n' "$CATHOOK_NET_INTERFACE"
+        return
+    fi
+
+    interface="$(ip -o -4 route get "${CATHOOK_NET_PROBE_HOST:-1.1.1.1}" 2>/dev/null | awk '
+        {
+            for (i = 1; i <= NF; i++) {
+                if ($i == "dev" && (i + 1) <= NF) {
+                    print $(i + 1)
+                    exit
+                }
+            }
+        }')"
+
+    if [[ -n "$interface" ]]; then
+        printf '%s\n' "$interface"
+        return
+    fi
+
     ip -o -4 route show default 2>/dev/null | awk '
         {
             for (i = 1; i <= NF; i++) {

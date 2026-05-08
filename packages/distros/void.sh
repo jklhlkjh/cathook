@@ -26,6 +26,7 @@ run_as_root xbps-install -Sy \
     mesa-dri-devel \
     net-tools \
     nodejs \
+    libopenal \
     pkg-config \
     rsync \
     vulkan-headers \

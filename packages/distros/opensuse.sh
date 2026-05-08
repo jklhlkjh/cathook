@@ -27,6 +27,7 @@ run_as_root zypper --non-interactive install --no-recommends \
     net-tools \
     nodejs \
     npm \
+    openal-soft \
     pkgconf-pkg-config \
     rsync \
     vulkan-devel \

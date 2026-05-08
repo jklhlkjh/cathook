@@ -70,6 +70,7 @@ run_as_root pacman -Syu --needed --noconfirm \
     net-tools \
     nodejs \
     npm \
+    openal \
     pkgconf \
     rsync \
     sdl2 \

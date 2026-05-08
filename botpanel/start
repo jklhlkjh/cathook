@@ -219,6 +219,7 @@ install_dependency_packages() {
             firejail
             iptables
             iproute2
+            libopenal1
             nodejs
             npm
             xauth
@@ -244,37 +245,37 @@ install_dependency_packages() {
 
     if command -v pacman >/dev/null 2>&1; then
         run_as_root pacman -Sy --needed --noconfirm \
-            firejail iproute2 iptables nodejs npm xorg-server-xvfb xorg-xauth xpra
+            firejail iproute2 iptables nodejs npm openal xorg-server-xvfb xorg-xauth xpra
         return
     fi
 
     if command -v dnf >/dev/null 2>&1; then
         run_as_root dnf -y install \
-            firejail iproute iptables nodejs npm xorg-x11-drv-dummy xorg-x11-server-Xvfb xorg-x11-xauth xpra
+            firejail iproute iptables nodejs npm openal-soft xorg-x11-drv-dummy xorg-x11-server-Xvfb xorg-x11-xauth xpra
         return
     fi
 
     if command -v yum >/dev/null 2>&1; then
         run_as_root yum -y install \
-            firejail iproute iptables nodejs npm xorg-x11-drv-dummy xorg-x11-server-Xvfb xorg-x11-xauth xpra
+            firejail iproute iptables nodejs npm openal-soft xorg-x11-drv-dummy xorg-x11-server-Xvfb xorg-x11-xauth xpra
         return
     fi
 
     if command -v zypper >/dev/null 2>&1; then
         run_as_root zypper --non-interactive install --no-recommends \
-            firejail iproute2 iptables nodejs npm xauth xorg-x11-server xorg-x11-server-extra xpra
+            firejail iproute2 iptables nodejs npm openal-soft xauth xorg-x11-server xorg-x11-server-extra xpra
         return
     fi
 
     if command -v apk >/dev/null 2>&1; then
         run_as_root apk add --no-cache \
-            firejail iproute2 iptables nodejs npm xauth xvfb xpra
+            firejail iproute2 iptables nodejs npm openal-soft xauth xvfb xpra
         return
     fi
 
     if command -v xbps-install >/dev/null 2>&1; then
         run_as_root xbps-install -Sy \
-            firejail iproute2 iptables nodejs xorg-server-xvfb xpra
+            firejail iproute2 iptables nodejs libopenal xorg-server-xvfb xpra
         return
     fi
 
@@ -596,6 +597,33 @@ ensure_firejail_config() {
     run_as_root sed -i -E 's/^[[:space:]]*restricted-network[[:space:]]+yes/# restricted-network yes/' "$config_path"
 }
 
+ensure_user_namespaces() {
+    local conf_path="/etc/sysctl.d/99-cathook-userns.conf"
+    local -a settings=()
+    local setting=""
+
+    if [ -e /proc/sys/kernel/unprivileged_userns_clone ]; then
+        settings+=("kernel.unprivileged_userns_clone=1")
+    fi
+
+    if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+        settings+=("kernel.apparmor_restrict_unprivileged_userns=0")
+    fi
+
+    if [ "${#settings[@]}" -eq 0 ]; then
+        return
+    fi
+
+    for setting in "${settings[@]}"; do
+        run_as_root sysctl -w "$setting" >/dev/null
+    done
+
+    {
+        echo "# Required by Steam pressure-vessel inside bot firejail sandboxes."
+        printf '%s\n' "${settings[@]}"
+    } | run_as_root tee "$conf_path" >/dev/null
+}
+
 xpra_display_running() {
     local display_number="${display#:}"
     local lock_path="/tmp/.X${display_number}-lock"
@@ -899,7 +927,7 @@ start_panel() {
             CAT_IPC_PORT="$port" \
             CAT_VISIBLE_WINDOWS="$visible_windows" \
             CAT_TEXTMODE_GAME="${CAT_TEXTMODE_GAME:-}" \
-            CAT_STEAMWEBHELPER_CLEANUP="${CAT_STEAMWEBHELPER_CLEANUP:-1}" \
+            CAT_STEAMWEBHELPER_CLEANUP="${CAT_STEAMWEBHELPER_CLEANUP:-0}" \
             CAT_STEAMWEBHELPER_CLEANUP_SECONDS="${CAT_STEAMWEBHELPER_CLEANUP_SECONDS:-10}" \
             CAT_XPRA_LOG="$xpra_log" \
             CAT_STEAM_WEB_API_KEY="${CAT_STEAM_WEB_API_KEY:-}" \
@@ -917,7 +945,7 @@ start_panel() {
         CAT_IPC_PORT="$port" \
         CAT_VISIBLE_WINDOWS="$visible_windows" \
         CAT_TEXTMODE_GAME="${CAT_TEXTMODE_GAME:-}" \
-        CAT_STEAMWEBHELPER_CLEANUP="${CAT_STEAMWEBHELPER_CLEANUP:-1}" \
+        CAT_STEAMWEBHELPER_CLEANUP="${CAT_STEAMWEBHELPER_CLEANUP:-0}" \
         CAT_STEAMWEBHELPER_CLEANUP_SECONDS="${CAT_STEAMWEBHELPER_CLEANUP_SECONDS:-10}" \
         CAT_XPRA_LOG="$xpra_log" \
         CAT_STEAM_WEB_API_KEY="${CAT_STEAM_WEB_API_KEY:-}" \
@@ -959,6 +987,7 @@ ensure_web_bundle
 ensure_accounts_file
 ensure_user_instances
 ensure_firejail_config
+ensure_user_namespaces
 ensure_utmp_file
 ensure_xpra_config
 start_xpra

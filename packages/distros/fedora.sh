@@ -38,6 +38,7 @@ run_as_root "${pkg_manager[@]}" -y install \
     net-tools \
     nodejs \
     npm \
+    openal-soft \
     pkgconf-pkg-config \
     rsync \
     vulkan-headers \

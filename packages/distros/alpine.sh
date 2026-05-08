@@ -26,6 +26,7 @@ run_as_root apk add --no-cache \
     net-tools \
     nodejs \
     npm \
+    openal-soft \
     pkgconf \
     rsync \
     sdl2-dev \

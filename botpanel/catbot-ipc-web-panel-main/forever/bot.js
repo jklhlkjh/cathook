@@ -30,8 +30,8 @@ const GAME_MODE_OPTIONS = TEXTMODE_GAME
 const SHARED_STEAMAPPS = '/opt/steamapps';
 const CATHOOK_ATTACH_DELAY_SECONDS = Number.parseInt(process.env.CATHOOK_ATTACH_DELAY_SECONDS || '0', 10);
 
-const LAUNCH_OPTIONS_STEAM = `firejail --dns=1.1.1.1 %NETWORK% --noprofile --private="%HOME%" --name=%JAILNAME% --env=PULSE_SERVER="unix:/tmp/pulse.sock" --env=DISPLAY=%DISPLAY% --env=XAUTHORITY=%XAUTHORITY% --env=LD_PRELOAD=%LD_PRELOAD% %STEAM% ${STEAM_WINDOW_OPTIONS} -login %LOGIN% %PASSWORD%`
-const LAUNCH_OPTIONS_STEAM_RESET = 'firejail --net=none --noprofile --private="%HOME%" %STEAM% --reset'
+const LAUNCH_OPTIONS_STEAM = `firejail --dns=1.1.1.1 %NETWORK% --noprofile --private="%HOME%" --name=%JAILNAME% --env=PULSE_SERVER="unix:/tmp/pulse.sock" --env=DISPLAY=%DISPLAY% --env=XAUTHORITY=%XAUTHORITY% --env=LD_LIBRARY_PATH=%STEAM_LD_LIBRARY_PATH% --env=LD_PRELOAD=%LD_PRELOAD% %STEAM% ${STEAM_WINDOW_OPTIONS} -login %LOGIN% %PASSWORD%`
+const LAUNCH_OPTIONS_STEAM_RESET = 'firejail --net=none --noprofile --private="%HOME%" --env=LD_LIBRARY_PATH=%STEAM_LD_LIBRARY_PATH% %STEAM% --reset'
 const LAUNCH_OPTIONS_GAME = `firejail --join=%JAILNAME% bash -c 'cd "%GAMEPATH%" && %RUNTIME_PREFIX% SteamAppId=440 SteamGameId=440 SteamOverlayGameId=440 SteamEnv=1 CATHOOK_ROOT="%CATHOOK_ROOT%" CATHOOK_AUTO_ATTACH=1 CATHOOK_ATTACH_DELAY_SECONDS=%CATHOOK_ATTACH_DELAY_SECONDS% CAT_BOT_ID=%BOT_ID% CAT_BOT_NAME=%BOT_NAME% CAT_STEAMID32=%STEAMID32% LD_PRELOAD=%LD_PRELOAD% DISPLAY=%DISPLAY% XAUTHORITY="%XAUTHORITY%" PULSE_SERVER="unix:/tmp/pulse.sock" %GAME_BINARY% -steam -game tf ${GAME_WINDOW_OPTIONS} -novid -nojoy -noipx -nomessagebox -nominidumps -nohltv -nobreakpad -reuse -noquicktime -precachefontchars -particles 1 -snoforceformat -softparticlesdefaultoff ${GAME_MODE_OPTIONS} -forcenovsync -insecure +clientport 27006-27014'`
 const GAME_LIBRARY_PATH = './bin:./bin/linux64:./tf/bin:./tf/bin/linux64:./platform:./platform/bin:./platform/bin/linux64:.';
 
@@ -50,11 +50,19 @@ const TIMEOUT_IPC_STATE = Number.parseInt(process.env.CAT_IPC_TIMEOUT_SECONDS ||
 // Time to wait for steam to be "ready"
 const TIMEOUT_STEAM_RUNNING = Number.parseInt(process.env.CAT_STEAM_TIMEOUT_SECONDS || '300', 10) * 1000;
 const TIMEOUT_STEAM_ASSUME_READY = Number.parseInt(process.env.CAT_STEAM_READY_SECONDS || '0', 10) * 1000;
-const STEAMWEBHELPER_CLEANUP_ENABLED = process.env.CAT_STEAMWEBHELPER_CLEANUP !== '0';
+const STEAMWEBHELPER_CLEANUP_ENABLED = process.env.CAT_STEAMWEBHELPER_CLEANUP === '1' || config.steamwebhelper_cleanup === true;
 const STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE = Number.parseInt(process.env.CAT_STEAMWEBHELPER_CLEANUP_SECONDS || '10', 10);
 const STEAMWEBHELPER_CLEANUP_DELAY = (Number.isFinite(STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) ? Math.max(0, STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) : 10) * 1000;
 // Time to delay individual bot starts by to prevent IPC ID conflicts
 const DELAY_START_TIME = 1000;
+const GAME_STARTUP_FATAL_PATTERNS = [
+    'AppFramework : Unable to load module engine.so!',
+    'Unable to load interface VCvarQuery001 from engine.so'
+];
+const STEAM_STARTUP_FATAL_PATTERNS = [
+    'Error: Couldn\'t set up the Steam Runtime.',
+    'LD_LIBRARY_PATH: unbound variable'
+];
 let navmesh_sync_done = false;
 
 const STATE = {
@@ -120,11 +128,20 @@ function steamapps_tf2_ready(steamapps_path) {
 function steam_root_ready(steam_path) {
     return steam_path &&
         fs.existsSync(path.join(steam_path, 'steam.sh')) &&
-        fs.existsSync(path.join(steam_path, 'ubuntu12_32/steam'));
+        fs.existsSync(path.join(steam_path, 'ubuntu12_32/steam')) &&
+        fs.existsSync(path.join(steam_path, 'ubuntu12_32/steam-runtime/run.sh'));
 }
 
 function steam_client_initialized_from_log(text) {
     return STEAM_CLIENT_INITIALIZED_PATTERNS.some((pattern) => text.includes(pattern));
+}
+
+function game_startup_log_has_fatal_error(text) {
+    return GAME_STARTUP_FATAL_PATTERNS.some((pattern) => text.includes(pattern));
+}
+
+function steam_startup_log_has_fatal_error(text) {
+    return STEAM_STARTUP_FATAL_PATTERNS.some((pattern) => text.includes(pattern));
 }
 
 function command_succeeds(command, args) {
@@ -485,6 +502,18 @@ function ensure_directory_not_symlink(directory_path) {
 }
 
 function get_default_network_interface() {
+    if (process.env.CATHOOK_NET_INTERFACE)
+        return process.env.CATHOOK_NET_INTERFACE;
+
+    try {
+        const route = child_process.execFileSync('ip', ['-o', '-4', 'route', 'get', process.env.CATHOOK_NET_PROBE_HOST || '1.1.1.1'], { encoding: 'utf8' }).trim();
+        const fields = route.split(/\s+/);
+        const dev_index = fields.indexOf('dev');
+
+        if (dev_index !== -1 && dev_index + 1 < fields.length)
+            return fields[dev_index + 1];
+    } catch (error) { }
+
     try {
         const default_route = child_process.execFileSync('ip', ['-o', '-4', 'route', 'show', 'default'], { encoding: 'utf8' }).trim();
         const fields = default_route.split(/\s+/);
@@ -819,10 +848,16 @@ class Bot extends EventEmitter {
 
         const target_path = this.botSteamPath(source_path);
         const steam_config_path = path.join(this.home, '.steam');
-        if (!fs.existsSync(path.join(target_path, 'steam.sh'))) {
+        if (!steam_root_ready(target_path)) {
+            if (fs.existsSync(target_path)) {
+                this.log(`Replacing incomplete bot Steam install at ${target_path}`);
+                fs.rmSync(target_path, { recursive: true, force: true });
+            }
             this.log(`Seeding Steam client into bot home from ${source_path} to ${target_path}`);
             copy_steam_seed(source_path, target_path);
             chown_tree(target_path, USER.uid, USER.uid);
+            if (!steam_root_ready(target_path))
+                this.log(`[ERROR] Seeded Steam install is still incomplete at ${target_path}`);
         }
 
         fs.mkdirSync(steam_config_path, { recursive: true });
@@ -882,6 +917,36 @@ class Bot extends EventEmitter {
         }
 
         return null;
+    }
+
+    steamLoggedIn() {
+        return !!this.steamid32FromLoginUsers();
+    }
+
+    sandboxHomePath(host_path) {
+        if (path_is_inside(host_path, this.home))
+            return path.join(USER.home, path.relative(this.home, host_path));
+
+        return host_path;
+    }
+
+    steamLaunchCommand() {
+        if (this.nativeSteam)
+            return 'steam-native';
+
+        const steam_script_candidates = unique_paths([
+            ...this.steamInstallCandidates().map((steam_path) => path.join(steam_path, 'steam.sh')),
+            path.join(this.home, '.steam/debian-installation/steam.sh'),
+            path.join(this.home, '.steam/steam/steam.sh')
+        ]);
+
+        for (const steam_script of steam_script_candidates) {
+            if (fs.existsSync(steam_script))
+                return shell_quote(this.sandboxHomePath(steam_script));
+        }
+
+        this.log('[ERROR] Bot-local steam.sh was not found; falling back to system steam wrapper.');
+        return 'steam';
     }
 
     ensureVisibleXauthority() {
@@ -995,6 +1060,18 @@ class Bot extends EventEmitter {
         }
     }
 
+    steamFatalStartupLogPath() {
+        for (var log_path of this.existingSteamLogPaths()) {
+            try {
+                const log_text = fs.readFileSync(log_path, 'utf8');
+                if (steam_startup_log_has_fatal_error(log_text))
+                    return log_path;
+            } catch (error) { }
+        }
+
+        return null;
+    }
+
     markSteamReady(preferredSteamPath) {
         const candidates = unique_paths([preferredSteamPath, ...this.steamInstallCandidates()]);
         const steam_path = candidates.find(steam_root_ready)
@@ -1003,6 +1080,14 @@ class Bot extends EventEmitter {
 
         this.steamPath = this.botSteamPath(steam_path);
         this.steamApps = path.join(this.steamPath, 'steamapps');
+
+        if (!this.steamLoggedIn()) {
+            if (!this.time_steamStatusLog || Date.now() > this.time_steamStatusLog) {
+                this.log(`Steam client is initialized, but ${this.account.login} is not logged in yet; waiting before launching TF2.`);
+                this.time_steamStatusLog = Date.now() + 10000;
+            }
+            return false;
+        }
 
         this.ensureSharedSteamapps();
         if (this.shouldSetupSteamapps())
@@ -1032,7 +1117,7 @@ class Bot extends EventEmitter {
         }
 
         this.steamClientInitialized = true;
-        if (!this.isSteamWorking)
+        if (!this.isSteamWorking && this.steamLoggedIn())
             return this.markSteamReady(preferredSteamPath);
 
         return true;
@@ -1051,7 +1136,7 @@ class Bot extends EventEmitter {
     }
 
     steamRuntimeScript() {
-        const runtime_dirs = ['ubuntu12_64/steam-runtime/run.sh', 'linux64/steam-runtime/run.sh'];
+        const runtime_dirs = ['ubuntu12_32/steam-runtime/run.sh', 'ubuntu12_64/steam-runtime/run.sh', 'linux64/steam-runtime/run.sh'];
         for (var runtime_dir of runtime_dirs) {
             const host_runtime_path = path.join(this.steamPath, runtime_dir);
             if (fs.existsSync(host_runtime_path))
@@ -1064,9 +1149,42 @@ class Bot extends EventEmitter {
     gameRuntimePrefix() {
         const runtime_script = this.nativeSteam ? null : this.steamRuntimeScript();
         if (runtime_script)
-            return `LD_LIBRARY_PATH="$(${bash_double_quote_escape(runtime_script)} printenv LD_LIBRARY_PATH):${GAME_LIBRARY_PATH}"`;
+            return `LD_LIBRARY_PATH="$("${bash_double_quote_escape(runtime_script)}" printenv LD_LIBRARY_PATH 2>/dev/null):${GAME_LIBRARY_PATH}"`;
 
         return `LD_LIBRARY_PATH="\${LD_LIBRARY_PATH:-}:${GAME_LIBRARY_PATH}"`;
+    }
+
+    game_dependency_check_command(game_launch_path) {
+        const runtime_script = this.nativeSteam ? null : this.steamRuntimeScript();
+        const runtime_path_command = runtime_script
+            ? `"${bash_double_quote_escape(runtime_script)}" printenv LD_LIBRARY_PATH 2>/dev/null`
+            : 'printf %s "${LD_LIBRARY_PATH:-}"';
+        const escaped_game_path = bash_double_quote_escape(game_launch_path);
+
+        return [
+            `cd "${escaped_game_path}"`,
+            `game_ld_path="$(${runtime_path_command}):${GAME_LIBRARY_PATH}"`,
+            'LD_LIBRARY_PATH="$game_ld_path" ldd ./tf_linux64 ./bin/linux64/engine.so'
+        ].join(' && ');
+    }
+
+    validateGameDependencies(game_launch_path) {
+        try {
+            const ldd_output = child_process.execFileSync('bash', ['-lc', this.game_dependency_check_command(game_launch_path)], {
+                encoding: 'utf8',
+                env: Object.assign({}, process.env, this.spawnOptions.env)
+            });
+            const missing_libraries = [...ldd_output.matchAll(/^\s*(\S+)\s+=>\s+not found\s*$/gm)].map((match) => match[1]);
+            if (!missing_libraries.length)
+                return true;
+
+            this.log(`[ERROR] TF2 dependency check failed, missing=${[...new Set(missing_libraries)].join(', ')}`);
+            this.log('Install missing runtime libraries with ./install-deps or botpanel/start, then restart the panel.');
+            return false;
+        } catch (error) {
+            this.log(`[ERROR] TF2 dependency check failed: ${error.message}`);
+            return false;
+        }
     }
 
     pollSteamReady() {
@@ -1112,7 +1230,7 @@ class Bot extends EventEmitter {
         self.prepareSteamInstall();
         const xauthority_path = self.ensureVisibleXauthority();
 
-        var steambin = this.nativeSteam ? "steam-native" : "steam";
+        var steambin = this.steamLaunchCommand();
 
         self.procFirejailSteam = child_process.spawn(([this.shouldResetSteam, this.shouldResetSteam = 0][0] ? LAUNCH_OPTIONS_STEAM_RESET : LAUNCH_OPTIONS_STEAM)
             // Username
@@ -1121,6 +1239,7 @@ class Bot extends EventEmitter {
             .replace("%PASSWORD%", shell_quote(self.account.password))
             // Name of the firejail jail
             .replace("%JAILNAME%", shell_quote(self.name))
+            .replace("%STEAM_LD_LIBRARY_PATH%", shell_quote(process.env.LD_LIBRARY_PATH || ''))
             .replace("%LD_PRELOAD%", shell_quote(process.env.STEAM_LD_PRELOAD || ''))
             // XOrg Display
             .replace("%DISPLAY%", shell_quote(BOT_DISPLAY))
@@ -1249,13 +1368,24 @@ class Bot extends EventEmitter {
             self.shouldRestart = true;
             return;
         }
+        if (!self.validateGameDependencies(game_launch_path)) {
+            self.shouldRun = false;
+            self.shouldRestart = false;
+            self.removeGamePreloadLibrary();
+            return false;
+        }
 
         const game_preload = preload_value(filename);
         const steamid32 = self.steamid32FromLoginUsers() || '';
-        if (steamid32)
-            self.log(`Resolved SteamID32 ${steamid32} for ${self.account.login}`);
-        else
-            self.log(`SteamID32 for ${self.account.login} is not available from loginusers.vdf yet`);
+        if (!steamid32) {
+            self.log(`SteamID32 for ${self.account.login} is not available from loginusers.vdf yet; delaying TF2 launch until Steam is logged in.`);
+            self.isSteamWorking = false;
+            self.steamClientInitialized = false;
+            self.removeGamePreloadLibrary();
+            return false;
+        }
+
+        self.log(`Resolved SteamID32 ${steamid32} for ${self.account.login}`);
         self.log(`Launching TF2 from ${game_launch_path} binary=${game_binary} source_library=${source_library} attach_delay_seconds=${CATHOOK_ATTACH_DELAY_SECONDS} preload=${game_preload}`);
         self.procFirejailGame = child_process.spawn(LAUNCH_OPTIONS_GAME.replace("%GAMEPATH%", bash_double_quote_escape(game_launch_path))
             .replace("%RUNTIME_PREFIX%", self.gameRuntimePrefix())
@@ -1278,6 +1408,7 @@ class Bot extends EventEmitter {
         self.procFirejailGame.stdout.pipe(self.logGame);
         self.procFirejailGame.stderr.pipe(self.logGame);
         self.procFirejailGame.on('exit', self.handleGameExit.bind(self));
+        return true;
     }
 
     handleSteamExit(code, signal) {
@@ -1285,6 +1416,12 @@ class Bot extends EventEmitter {
         const steam_log_tail = log_file_tail('./logs/' + this.name + '.steam.log', 25);
         if (steam_log_tail)
             this.log(`Steam log tail:\n${steam_log_tail}`);
+        if (!this.isSteamWorking && code !== 0 && steam_startup_log_has_fatal_error(steam_log_tail)) {
+            this.log('[ERROR] Steam exited during startup with a fatal runtime setup error; stopping this bot instead of relaunching in a loop.');
+            this.log('Run ./install-deps and check the bot Steam runtime/logs before restarting this bot.');
+            this.shouldRun = false;
+            this.shouldRestart = false;
+        }
         this.emit('exit-steam');
 
         this.isSteamWorking = false;
@@ -1303,6 +1440,12 @@ class Bot extends EventEmitter {
         const game_log_tail = log_file_tail('./logs/' + this.name + '.game.log', 25);
         if (game_log_tail)
             this.log(`Game log tail:\n${game_log_tail}`);
+        if (!this.ipcState && !this.gameStarted && game_startup_log_has_fatal_error(game_log_tail)) {
+            this.log('[ERROR] TF2 exited during startup after failing to load engine.so; stopping this bot instead of restarting in a loop.');
+            this.log('Check missing libraries with ldd on tf_linux64 and bin/linux64/engine.so, then run ./install-deps.');
+            this.shouldRun = false;
+            this.shouldRestart = false;
+        }
         const crashed = (code !== null && code !== 0) || signal !== null;
         if (crashed && game_pid > 0 && GDB_CRASH_REPORTS)
             this.runGdbCrashReport(game_pid, code, signal);
@@ -1647,6 +1790,16 @@ class Bot extends EventEmitter {
                     if (this.isSteamWorking)
                         return;
 
+                    const fatal_steam_log_path = this.steamFatalStartupLogPath();
+                    if (fatal_steam_log_path) {
+                        this.log(`[ERROR] Steam startup fatal error detected in ${fatal_steam_log_path}; stopping this bot instead of waiting ${TIMEOUT_STEAM_RUNNING / 1000} seconds.`);
+                        this.logSteamTails('Steam fatal startup log tail', 12);
+                        this.shouldRun = false;
+                        this.shouldRestart = false;
+                        this.killSteam();
+                        return;
+                    }
+
                     if (!this.time_steamStatusLog || time > this.time_steamStatusLog) {
                         const remaining = this.time_steamWorking ? Math.max(0, Math.ceil((this.time_steamWorking - time) / 1000)) : 0;
                         this.log(`Waiting for Steam login/readiness, remaining_seconds=${remaining}`);
@@ -1691,9 +1844,10 @@ class Bot extends EventEmitter {
 
                         this.time_steam_client_initialized_game_launch = 0;
                         this.time_game_launch = 0;
-                        this.spawnGame();
-                        this.state = STATE.WAITING;
-                        this.time_gameCheck = time + TIMEOUT_START_GAME;
+                        if (this.spawnGame()) {
+                            this.state = STATE.WAITING;
+                            this.time_gameCheck = time + TIMEOUT_START_GAME;
+                        }
                     }
                     else {
                         if (this.time_gameCheck) {
