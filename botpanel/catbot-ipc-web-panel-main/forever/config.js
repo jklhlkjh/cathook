@@ -1,10 +1,63 @@
-const config = {
+const fs = require('fs');
+const path = require('path');
+
+const settings_path = path.join(__dirname, '..', 'ch-settings.json');
+
+function default_nonnegative_integer(value, fallback) {
+    const text = String(value || '').trim();
+    if (!/^[0-9]+$/.test(text))
+        return fallback;
+
+    const number = Number.parseInt(text, 10);
+    return Number.isSafeInteger(number) ? number : fallback;
+}
+
+const default_config = {
     nodiscard: true,
     gdb_crash_reports: false,
     discord_reports: true,
     discord_webhook_url: '',
     ban_tracker_enabled: false,
-    max_concurrent_bots: 3
+    max_concurrent_bots: 3,
+    auto_restart_steam_if_not_logged_within: default_nonnegative_integer(process.env.CAT_STEAM_TIMEOUT_SECONDS, 300)
+};
+
+function load_settings() {
+    try {
+        const settings = JSON.parse(fs.readFileSync(settings_path, 'utf8'));
+        const result = {};
+        for (const key of Object.keys(default_config)) {
+            if (Object.prototype.hasOwnProperty.call(settings, key))
+                result[key] = settings[key];
+        }
+        return result;
+    } catch (error) {
+        if (error.code !== 'ENOENT')
+            console.log(`[WARNING] Failed to load ${settings_path}: ${error.message}`);
+        return {};
+    }
 }
+
+const config = Object.assign({}, default_config, load_settings());
+
+function save_settings() {
+    const settings = {};
+    for (const key of Object.keys(default_config))
+        settings[key] = config[key];
+
+    const temporary_path = settings_path + '.tmp';
+    fs.writeFileSync(temporary_path, JSON.stringify(settings, null, 4) + '\n');
+    fs.renameSync(temporary_path, settings_path);
+}
+
+Object.defineProperty(config, 'save_settings', {
+    value: save_settings,
+    enumerable: false
+});
+
+Object.defineProperty(config, 'settings_path', {
+    value: settings_path,
+    enumerable: false
+});
 
 module.exports = config;

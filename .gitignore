@@ -33,6 +33,8 @@ externalprojects/
 /botpanel/**/node_modules/
 /botpanel/**/package-lock.json
 /botpanel/**/apikey
+/botpanel/catbot-ipc-web-panel-main/ch-settings.json
+/botpanel/catbot-ipc-web-panel-main/ch-settings.json.tmp
 
 # Botpanel build outputs
 /botpanel/catbot-ipc-server-main/Debug/

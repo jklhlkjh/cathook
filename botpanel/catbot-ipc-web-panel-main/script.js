@@ -122,6 +122,44 @@ function load_config_checkbox(option, selector) {
 	});
 }
 
+function load_config_number(option, selector) {
+	request.get(`api/config/${option}`, function(e, r, b) {
+		if (!e)
+			$(selector).val(String(b).trim());
+	});
+}
+
+function apply_config_number(option, selector, label) {
+	const raw_value = String($(selector).val()).trim();
+	if (!/^[0-9]+$/.test(raw_value)) {
+		status.error(`${label} must be 0 or higher`);
+		load_config_number(option, selector);
+		return;
+	}
+
+	const value = Number.parseInt(raw_value, 10);
+	if (!Number.isSafeInteger(value) || value < 0) {
+		status.error(`${label} must be 0 or higher`);
+		load_config_number(option, selector);
+		return;
+	}
+
+	request.post({
+		url: `api/config/${option}`,
+		form: { value: value }
+	}, function(e, r, b) {
+		if (request_failed(e, r)) {
+			console.log(e, b);
+			status.error(`Error applying ${label}`);
+			load_config_number(option, selector);
+			return;
+		}
+
+		$(selector).val(String(b).trim());
+		status.info(`Applied ${label}`);
+	});
+}
+
 function request_failed(e, r) {
 	return e || !r || r.statusCode < 200 || r.statusCode >= 300;
 }
@@ -461,4 +499,16 @@ $(function() {
 		});
 	});
 	load_config_checkbox('ban_tracker_enabled', '#ban-tracker-enabled');
+	$('#steam-login-timeout-apply').on('click', function() {
+		apply_config_number('auto_restart_steam_if_not_logged_within', '#steam-login-timeout', 'Steam login timeout');
+	});
+	$('#steam-login-timeout').on('keypress', function(e) {
+		if (e.keyCode === 13) {
+			apply_config_number('auto_restart_steam_if_not_logged_within', '#steam-login-timeout', 'Steam login timeout');
+			e.preventDefault();
+		}
+	}).on('change', function() {
+		apply_config_number('auto_restart_steam_if_not_logged_within', '#steam-login-timeout', 'Steam login timeout');
+	});
+	load_config_number('auto_restart_steam_if_not_logged_within', '#steam-login-timeout');
 });

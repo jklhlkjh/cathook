@@ -47,8 +47,7 @@ const steam_client_initialized_game_delay = 20000;
 const TIMEOUT_START_GAME = 10000;
 // Timeout for cathook to connect to the IPC server once injected
 const TIMEOUT_IPC_STATE = Number.parseInt(process.env.CAT_IPC_TIMEOUT_SECONDS || '90', 10) * 1000;
-// Time to wait for steam to be "ready"
-const TIMEOUT_STEAM_RUNNING = Number.parseInt(process.env.CAT_STEAM_TIMEOUT_SECONDS || '300', 10) * 1000;
+// Time to wait for Steam to log in is configured in ch-settings.json. 0 disables it.
 const TIMEOUT_STEAM_ASSUME_READY = Number.parseInt(process.env.CAT_STEAM_READY_SECONDS || '0', 10) * 1000;
 const steam_logged_in_game_delay = Number.parseInt(process.env.CAT_STEAM_LOGGED_IN_GAME_DELAY_SECONDS || '30', 10) * 1000;
 const STEAMWEBHELPER_CLEANUP_ENABLED = process.env.CAT_STEAMWEBHELPER_CLEANUP === '1' || config.steamwebhelper_cleanup === true;
@@ -279,6 +278,23 @@ function max_concurrent_bots() {
         return 1;
 
     return value;
+}
+
+function steam_login_timeout_seconds() {
+    const value = Number.parseInt(config.auto_restart_steam_if_not_logged_within, 10);
+    if (!Number.isSafeInteger(value) || value < 0)
+        return 300;
+
+    return value;
+}
+
+function steam_login_timeout() {
+    return steam_login_timeout_seconds() * 1000;
+}
+
+function steam_login_timeout_description() {
+    const seconds = steam_login_timeout_seconds();
+    return seconds > 0 ? `${seconds} seconds` : 'login timeout disabled';
 }
 
 function read_proc_cmdline(pid) {
@@ -701,6 +717,7 @@ class Bot extends EventEmitter {
         this.shouldRestart = false;
         this.isSteamWorking = false;
         this.time_steamWorking = 0;
+        this.time_steam_login_timeout_started = 0;
         this.time_steamAssumeReady = 0;
         this.time_steamLoggedIn = 0;
         this.time_game_launch = 0;
@@ -1461,7 +1478,9 @@ class Bot extends EventEmitter {
 
             // Extend time if we are downloading updates.
             if (text.includes(" Downloading update (")) {
-                self.time_steamWorking = Date.now() + TIMEOUT_STEAM_RUNNING;
+                const timeout = steam_login_timeout();
+                self.time_steam_login_timeout_started = Date.now();
+                self.time_steamWorking = timeout ? self.time_steam_login_timeout_started + timeout : 0;
             }
             if (text.includes("Error: You are missing the following 32-bit libraries, and Steam may not run:")
                 || text.includes("Error: Couldn't set up the Steam Runtime. Are you running low on disk space?")) {
@@ -1570,6 +1589,7 @@ class Bot extends EventEmitter {
 
         this.isSteamWorking = false;
         this.steamClientInitialized = false;
+        this.time_steam_login_timeout_started = 0;
         this.time_steamLoggedIn = 0;
         this.time_steam_client_initialized_game_launch = 0;
         this.time_steamwebhelper_cleanup = 0;
@@ -1618,6 +1638,7 @@ class Bot extends EventEmitter {
         this.procFirejailSteam = null;
         this.isSteamWorking = false;
         this.time_steamWorking = 0;
+        this.time_steam_login_timeout_started = 0;
         this.time_steamAssumeReady = 0;
         this.time_steamLoggedIn = 0;
         this.time_game_launch = 0;
@@ -1927,19 +1948,33 @@ class Bot extends EventEmitter {
         });
     }
 
+    refresh_steam_login_timeout(time) {
+        const timeout = steam_login_timeout();
+        if (!timeout) {
+            this.time_steamWorking = 0;
+            return;
+        }
+
+        if (!this.time_steam_login_timeout_started)
+            this.time_steam_login_timeout_started = time;
+
+        this.time_steamWorking = this.time_steam_login_timeout_started + timeout;
+    }
+
     // Apply current state
     update() {
         var time = Date.now();
         if (this.shouldRun && !this.shouldRestart) {
             if (this.procFirejailSteam) {
                 if (!this.isSteamWorking) {
+                    this.refresh_steam_login_timeout(time);
                     this.pollSteamReady();
                     if (this.isSteamWorking)
                         return;
 
                     const fatal_steam_log_path = this.steamFatalStartupLogPath();
                     if (fatal_steam_log_path) {
-                        this.log(`[ERROR] Steam startup fatal error detected in ${fatal_steam_log_path}; stopping this bot instead of waiting ${TIMEOUT_STEAM_RUNNING / 1000} seconds.`);
+                        this.log(`[ERROR] Steam startup fatal error detected in ${fatal_steam_log_path}; stopping this bot instead of waiting with ${steam_login_timeout_description()}.`);
                         this.logSteamTails('Steam fatal startup log tail', 12);
                         this.shouldRun = false;
                         this.shouldRestart = false;
@@ -1948,8 +1983,10 @@ class Bot extends EventEmitter {
                     }
 
                     if (!this.time_steamStatusLog || time > this.time_steamStatusLog) {
-                        const remaining = this.time_steamWorking ? Math.max(0, Math.ceil((this.time_steamWorking - time) / 1000)) : 0;
-                        this.log(`Waiting for Steam login/readiness, remaining_seconds=${remaining}`);
+                        const timeout_status = this.time_steamWorking
+                            ? `remaining_seconds=${Math.max(0, Math.ceil((this.time_steamWorking - time) / 1000))}`
+                            : 'login_timeout=disabled';
+                        this.log(`Waiting for Steam login/readiness, ${timeout_status}`);
                         const logs = this.existingSteamLogPaths();
                         this.log(logs.length ? `Visible Steam logs: ${logs.join(', ')}` : 'Visible Steam logs: none yet');
                         this.time_steamStatusLog = time + 10000;
@@ -2043,7 +2080,8 @@ class Bot extends EventEmitter {
                         this.state = STATE.STARTING;
                         this.reset();
                         this.spawnSteam();
-                        this.time_steamWorking = time + TIMEOUT_STEAM_RUNNING;
+                        this.time_steam_login_timeout_started = time;
+                        this.refresh_steam_login_timeout(time);
                         this.time_steamAssumeReady = TIMEOUT_STEAM_ASSUME_READY ? time + TIMEOUT_STEAM_ASSUME_READY : 0;
                     }
                 }

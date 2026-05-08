@@ -36,6 +36,22 @@ function parse_positive_integer(value) {
 	return number;
 }
 
+function parse_nonnegative_integer(value) {
+	const text = String(value).trim();
+	if (!/^[0-9]+$/.test(text))
+		return null;
+
+	const number = Number.parseInt(text, 10);
+	if (!Number.isSafeInteger(number))
+		return null;
+
+	return number;
+}
+
+function has_config_option(option) {
+	return Object.prototype.propertyIsEnumerable.call(config, option);
+}
+
 function set_config_value(option, raw_value) {
 	if (option === 'max_concurrent_bots') {
 		const value = parse_positive_integer(raw_value);
@@ -44,7 +60,48 @@ function set_config_value(option, raw_value) {
 		return value;
 	}
 
+	if (option === 'auto_restart_steam_if_not_logged_within') {
+		const value = parse_nonnegative_integer(raw_value);
+		if (value === null)
+			return null;
+		return value;
+	}
+
 	return parse_config_value(raw_value);
+}
+
+function save_config(res) {
+	try {
+		config.save_settings();
+		return true;
+	} catch (error) {
+		console.log(`[ERROR] Failed to save ${config.settings_path}: ${error.message}`);
+		res.status(500).send({ error: 'Failed to save config' });
+		return false;
+	}
+}
+
+function apply_config_value(option, raw_value, res) {
+	if (!has_config_option(option)) {
+		res.status(404).end();
+		return;
+	}
+
+	const value = set_config_value(option, raw_value);
+	if (value === null) {
+		res.status(400).send({ error: 'Invalid value' });
+		return;
+	}
+
+	const previous_value = config[option];
+	config[option] = value;
+	if (!save_config(res)) {
+		config[option] = previous_value;
+		return;
+	}
+
+	console.log(`Switching ${option} to ${value}`);
+	res.status(200).end('' + config[option]);
 }
 
 class app {
@@ -63,22 +120,13 @@ class app {
 		this.manager = manager;
 
 		app.post('/api/config/:option/:value', (req, res) => {
-			if (!config.hasOwnProperty(req.params.option))
-				res.status(404).end();
-			else {
-				const value = set_config_value(req.params.option, req.params.value);
-				if (value === null) {
-					res.status(400).send({ error: 'Invalid value' });
-					return;
-				}
-
-				console.log(`Switching ${req.params.option} to ${req.params.value}`)
-				config[req.params.option] = value;
-				res.status(200).end('' + config[req.params.option]);
-			}
+			apply_config_value(req.params.option, req.params.value, res);
+		});
+		app.post('/api/config/:option', (req, res) => {
+			apply_config_value(req.params.option, req.body.value, res);
 		});
 		app.get('/api/config/:option', (req, res) => {
-			if (!config.hasOwnProperty(req.params.option))
+			if (!has_config_option(req.params.option))
 				res.status(404).end();
 			else
 				res.status(200).end('' + config[req.params.option]);
@@ -167,7 +215,13 @@ class app {
 				return;
 			}
 
+			const previous_value = Bot.MAX_CONCURRENT_BOTS;
 			Bot.MAX_CONCURRENT_BOTS = value;
+			if (!save_config(res)) {
+				Bot.MAX_CONCURRENT_BOTS = previous_value;
+				return;
+			}
+
 			res.status(200).send({ value: Bot.MAX_CONCURRENT_BOTS });
 		};
 
