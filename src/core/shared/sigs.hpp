@@ -131,6 +131,24 @@ constexpr const char* view_render_render =
   "55 48 89 E5 41 57 41 56 41 55 41 54 53 48 81 EC ? ? ? ? 48 83 3F ?";
 constexpr const char* client_update_steam_rich_presence =
   "55 48 89 E5 41 57 41 56 41 55 49 89 FD 41 54 53 48 81 EC ? ? ? ? 48 8B 1D ? ? ? ? 48 C7 85 ? ? ? ? ? ? ? ? 48 8B 3B 48 85 FF";
+constexpr const char* replay_ui_nullcheck_0 =
+  "48 8D 05 ? ? ? ? 48 8B 38 48 8B 07 FF 50 38 84 C0 74 ? 48 8D 05 ? ? ? ? 48 8B 38 48 8B 07 FF 90 90 01 00 00";
+constexpr const char* replay_ui_nullcheck_1 =
+  "48 8D 05 ? ? ? ? 48 8B 38 48 8B 07 FF 50 38 84 C0 74 ? 45 84 E4 74 ?";
+constexpr const char* replay_ui_nullcheck_2 =
+  "4C 8D 35 ? ? ? ? 48 89 C3 49 8B 3E 48 8B 07 FF 50 38 48 85 DB";
+constexpr const char* replay_ui_nullcheck_3 =
+  "49 8B 3E 48 8B 07 FF 50 38 84 C0 0F 85 ? ? ? ? E8";
+constexpr const char* replay_ui_nullcheck_4 =
+  "4C 8D 35 ? ? ? ? 49 8B 3E 48 8B 07 FF 50 38 E9 ? ? ? ?";
+constexpr const char* replay_ui_nullcheck_5 =
+  "48 8D 05 ? ? ? ? 48 8B 38 48 8B 07 FF 50 30 84 C0 0F 85 ? ? ? ? 48 8D 05 ? ? ? ? 48 8B 38 48 8B 07 FF 90 D8 00 00 00";
+constexpr const char* replay_ui_nullcheck_6 =
+  "48 8D 05 ? ? ? ? 48 8B 38 48 8B 07 FF 90 D8 00 00 00 48 8D 05 ? ? ? ? 48 8D 35";
+constexpr const char* replay_ui_nullcheck_7 =
+  "48 8D 05 ? ? ? ? 48 8B 38 48 8B 07 FF 50 38 84 C0 0F 84 ? ? ? ? 4C 8D 3D";
+constexpr const char* replay_ui_nullcheck_8 =
+  "48 8D 05 ? ? ? ? 48 8B 38 48 8B 07 FF 90 D0 00 00 00 E9 ? ? ? ?";
 
 } // namespace sigs
 

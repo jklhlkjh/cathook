@@ -12,6 +12,7 @@ V  o o  V  file: src/features/automation/nographics/nographics.cpp
 #include "features/automation/nographics/nographics.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 
@@ -87,6 +88,8 @@ byte_patch particle_precache_patch{};
 byte_patch particle_effect_create_patch{};
 byte_patch view_render_patch{};
 byte_patch steam_rich_presence_patch{};
+constexpr std::size_t replay_ui_nullcheck_patch_count = 9;
+std::array<byte_patch, replay_ui_nullcheck_patch_count> replay_ui_nullcheck_patches{};
 
 bool has_extension(const char* filename, const char* extension)
 {
@@ -253,6 +256,71 @@ void* resolve_rip_target(std::uint8_t* instruction, int displacement_offset, int
   return instruction + instruction_size + displacement;
 }
 
+std::uint8_t* scan_client_patch(const char* signature, int offset)
+{
+  auto* match = reinterpret_cast<std::uint8_t*>(sigscan_module("client.so", signature));
+  if (match == nullptr)
+  {
+    return nullptr;
+  }
+
+  return match + offset;
+}
+
+bool initialize_replay_ui_nullcheck_patches()
+{
+  constexpr int call_offset_after_global_load = 13;
+  constexpr int call_offset_after_saved_return = 16;
+  constexpr int call_offset_at_start = 6;
+
+  std::array<std::uint8_t*, replay_ui_nullcheck_patch_count> patch_sites = {
+    scan_client_patch(sigs::replay_ui_nullcheck_0, call_offset_after_global_load),
+    scan_client_patch(sigs::replay_ui_nullcheck_1, call_offset_after_global_load),
+    scan_client_patch(sigs::replay_ui_nullcheck_2, call_offset_after_saved_return),
+    scan_client_patch(sigs::replay_ui_nullcheck_3, call_offset_at_start),
+    scan_client_patch(sigs::replay_ui_nullcheck_4, call_offset_after_global_load),
+    scan_client_patch(sigs::replay_ui_nullcheck_5, call_offset_after_global_load),
+    scan_client_patch(sigs::replay_ui_nullcheck_6, call_offset_after_global_load),
+    scan_client_patch(sigs::replay_ui_nullcheck_7, call_offset_after_global_load),
+    scan_client_patch(sigs::replay_ui_nullcheck_8, call_offset_after_global_load),
+  };
+
+  for (std::size_t index = 0; index < patch_sites.size(); ++index)
+  {
+    if (patch_sites[index] == nullptr)
+    {
+      print("[nographics] replay ui nullcheck patch scan failed index=%zu\n", index);
+      return false;
+    }
+  }
+
+  replay_ui_nullcheck_patches[0] = byte_patch(patch_sites[0], { 0x30, 0xC0, 0x90 });
+  replay_ui_nullcheck_patches[1] = byte_patch(patch_sites[1], { 0x30, 0xC0, 0x90 });
+  replay_ui_nullcheck_patches[2] = byte_patch(patch_sites[2], { 0x30, 0xC0, 0x90 });
+  replay_ui_nullcheck_patches[3] = byte_patch(patch_sites[3], { 0x30, 0xC0, 0x90 });
+  replay_ui_nullcheck_patches[4] = byte_patch(patch_sites[4], { 0x30, 0xC0, 0x90 });
+  replay_ui_nullcheck_patches[5] = byte_patch(patch_sites[5], { 0x30, 0xC0, 0x90 });
+  replay_ui_nullcheck_patches[6] = byte_patch(patch_sites[6], { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 });
+  replay_ui_nullcheck_patches[7] = byte_patch(patch_sites[7], { 0x30, 0xC0, 0x90 });
+  replay_ui_nullcheck_patches[8] = byte_patch(patch_sites[8], { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 });
+  return true;
+}
+
+void restore_render_patch_objects()
+{
+  play_sequence_patch.restore();
+  particle_create_patch.restore();
+  particle_precache_patch.restore();
+  particle_effect_create_patch.restore();
+  view_render_patch.restore();
+  steam_rich_presence_patch.restore();
+
+  for (auto& patch : replay_ui_nullcheck_patches)
+  {
+    patch.restore();
+  }
+}
+
 bool initialize_render_patches()
 {
   if (render_patches_initialized)
@@ -278,6 +346,12 @@ bool initialize_render_patches()
     return false;
   }
 
+  if (!initialize_replay_ui_nullcheck_patches())
+  {
+    render_patches_ready = false;
+    return false;
+  }
+
   play_sequence_patch = byte_patch(play_sequence, { 0xC3 });
   particle_create_patch = byte_patch(particle_create, { 0x31, 0xC0, 0xC3 });
   particle_precache_patch = byte_patch(particle_precache, { 0x31, 0xC0, 0xC3 });
@@ -296,20 +370,20 @@ void apply_render_patches()
     return;
   }
 
-  const bool ok = play_sequence_patch.apply() &&
-                  particle_create_patch.apply() &&
-                  particle_precache_patch.apply() &&
-                  particle_effect_create_patch.apply() &&
-                  view_render_patch.apply() &&
-                  steam_rich_presence_patch.apply();
+  bool ok = play_sequence_patch.apply() &&
+            particle_create_patch.apply() &&
+            particle_precache_patch.apply() &&
+            particle_effect_create_patch.apply() &&
+            view_render_patch.apply() &&
+            steam_rich_presence_patch.apply();
+  for (auto& patch : replay_ui_nullcheck_patches)
+  {
+    ok = ok && patch.apply();
+  }
+
   if (!ok)
   {
-    play_sequence_patch.restore();
-    particle_create_patch.restore();
-    particle_precache_patch.restore();
-    particle_effect_create_patch.restore();
-    view_render_patch.restore();
-    steam_rich_presence_patch.restore();
+    restore_render_patch_objects();
     print("[nographics] render patch apply failed\n");
     return;
   }
@@ -324,12 +398,7 @@ void restore_render_patches()
     return;
   }
 
-  play_sequence_patch.restore();
-  particle_create_patch.restore();
-  particle_precache_patch.restore();
-  particle_effect_create_patch.restore();
-  view_render_patch.restore();
-  steam_rich_presence_patch.restore();
+  restore_render_patch_objects();
   render_patches_applied = false;
 }
 
