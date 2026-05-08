@@ -15,6 +15,7 @@ const CATHOOK_ROOT = process.env.CATHOOK_ROOT || '/opt/cathook';
 const VISIBLE_WINDOWS = process.env.CAT_VISIBLE_WINDOWS === '1';
 const BOT_DISPLAY = process.env.DISPLAY || process.env.CAT_DEFAULT_DISPLAY || ':699';
 const BOT_XAUTHORITY = VISIBLE_WINDOWS ? (process.env.XAUTHORITY || path.join(process.env.HOME || '', '.Xauthority')) : '';
+const XPRA_LOG = process.env.CAT_XPRA_LOG || '/tmp/cat-catbot-xpra.log';
 const TEXTMODE_GAME = process.env.CAT_TEXTMODE_GAME === '1' || (!VISIBLE_WINDOWS && process.env.CAT_TEXTMODE_GAME !== '0');
 const GDB_CRASH_REPORTS = process.env.CAT_GDB_CRASH_REPORTS === '1' || config.gdb_crash_reports === true;
 const discord_reports = process.env.CATHOOK_DISCORD_REPORTS !== '0' && config.discord_reports !== false;
@@ -35,8 +36,12 @@ const LAUNCH_OPTIONS_GAME = `firejail --join=%JAILNAME% bash -c 'cd "%GAMEPATH%"
 const GAME_LIBRARY_PATH = './bin:./bin/linux64:./tf/bin:./tf/bin/linux64:./platform:./platform/bin:./platform/bin/linux64:.';
 
 // Adjust these values as needed to optimize catbot performance
-// Static delay after Steam is ready before launching TF2
-const TIMEOUT_LAUNCH_GAME = 15000;
+// Steam client output that appears after the client is initialized enough to launch TF2.
+const STEAM_CLIENT_INITIALIZED_PATTERNS = [
+    'Desktop state changed:',
+    'Caching cursor image',
+    'reaping pid:'
+];
 // How long to wait for the TF2 process to be created by firejail
 const TIMEOUT_START_GAME = 10000;
 // Timeout for cathook to connect to the IPC server once injected
@@ -115,6 +120,10 @@ function steam_root_ready(steam_path) {
     return steam_path &&
         fs.existsSync(path.join(steam_path, 'steam.sh')) &&
         fs.existsSync(path.join(steam_path, 'ubuntu12_32/steam'));
+}
+
+function steam_client_initialized_from_log(text) {
+    return STEAM_CLIENT_INITIALIZED_PATTERNS.some((pattern) => text.includes(pattern));
 }
 
 function command_succeeds(command, args) {
@@ -522,7 +531,7 @@ if (!USER.interface) {
 
 console.log('Main user name: ' + USER.name);
 console.log('Visible windows: ' + (VISIBLE_WINDOWS ? 'yes' : 'no') + ', display: ' + BOT_DISPLAY + ', game_mode: ' + (TEXTMODE_GAME ? 'textmode' : 'graphical'));
-console.log('Bot runtime version: steam_login_wait_no_auto_assume_opengl_v1');
+console.log('Bot runtime version: steam_log_triggered_client_init_v1');
 
 class Bot extends EventEmitter {
     constructor(botid) {
@@ -563,6 +572,7 @@ class Bot extends EventEmitter {
         this.time_steamwebhelper_cleanup = 0;
         this.steamwebhelper_cleanup_done = false;
         this.steamwebhelper_frozen_pid = -1;
+        this.steamClientInitialized = false;
 
         this.logSteam = null;
         this.logGame = null;
@@ -1011,6 +1021,19 @@ class Bot extends EventEmitter {
         return true;
     }
 
+    mark_steam_client_initialized(preferredSteamPath, log_text) {
+        if (!this.steamClientInitialized) {
+            const first_line = String(log_text || '').split(/\r?\n/).find((line) => line.trim()) || 'Steam client activity marker';
+            this.log(`Steam client initialized marker seen: ${first_line.trim()}`);
+        }
+
+        this.steamClientInitialized = true;
+        if (!this.isSteamWorking)
+            return this.markSteamReady(preferredSteamPath);
+
+        return true;
+    }
+
     gameLaunchPath() {
         const bot_relative_path = path.relative(this.home, this.tf2Path);
         if (path_is_inside(this.tf2Path, this.home))
@@ -1057,6 +1080,10 @@ class Bot extends EventEmitter {
         for (var logPath of this.steamLogPaths()) {
             try {
                 const log_text = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '';
+                if (steam_client_initialized_from_log(log_text)) {
+                    this.mark_steam_client_initialized(path.basename(logPath) === 'error.log' ? path.dirname(logPath) : null, log_text);
+                    return true;
+                }
                 if (ready_patterns.some((pattern) => log_text.includes(pattern))) {
                     this.markSteamReady(path.basename(logPath) === 'error.log' ? path.dirname(logPath) : null);
                     return true;
@@ -1105,10 +1132,13 @@ class Bot extends EventEmitter {
         self.procFirejailSteam.stdout.pipe(self.logSteam);
 
         var tail_steam_err_logs = [];
+        var steam_log_listener_paths = new Set();
         var steam_path = path.join(this.home, ".steam/steam");
-        var steam_error_logs_registered = false;
 
         function processErrorLogs(text) {
+            if (steam_client_initialized_from_log(text))
+                self.mark_steam_client_initialized(steam_path, text);
+
             if (text.includes("System startup time:")) {
                 self.markSteamReady(steam_path);
 
@@ -1126,24 +1156,31 @@ class Bot extends EventEmitter {
         }
 
         function registerSteamErrorLogListeners() {
-            if (steam_error_logs_registered)
-                return;
-
-            steam_error_logs_registered = true;
             var registered_count = 0;
-            for (const log_path of self.steamInstallCandidates().map((steam_root) => path.join(steam_root, 'error.log'))) {
+            const log_paths = [
+                ...self.steamInstallCandidates().map((steam_root) => path.join(steam_root, 'error.log')),
+                XPRA_LOG
+            ];
+
+            for (const log_path of unique_paths(log_paths)) {
+                if (steam_log_listener_paths.has(log_path))
+                    continue;
+
                 try {
                     const tail = new Tail(log_path);
                     tail.on('line', (data) => {
                         processErrorLogs.bind(this)(data);
                     });
                     tail_steam_err_logs.push(tail);
+                    steam_log_listener_paths.add(log_path);
                     registered_count++;
                 } catch (error) { }
             }
-            if (registered_count == 0)
-                steam_error_logs_registered = false;
+
+            return registered_count;
         }
+
+        registerSteamErrorLogListeners.bind(this)();
 
         self.procFirejailSteam.stderr.on("data", (data) => {
             var text = data.toString();
@@ -1152,6 +1189,9 @@ class Bot extends EventEmitter {
 
         self.procFirejailSteam.stdout.on("data", (data) => {
             var text = data.toString();
+            if (steam_client_initialized_from_log(text))
+                self.mark_steam_client_initialized(steam_path, text);
+
             // Extend time if we are downloading updates.
             if (text.includes(" Downloading update (")) {
                 self.time_steamWorking = Date.now() + TIMEOUT_STEAM_RUNNING;
@@ -1174,6 +1214,7 @@ class Bot extends EventEmitter {
                 }
             }
             tail_steam_err_logs = [];
+            steam_log_listener_paths.clear();
         });
         self.log(`Launched ${steambin} (${self.procFirejailSteam.pid})`);
         self.log(`Steam log capture: ./logs/${self.name}.steam.log plus ${self.steamInstallCandidates().map((steam_path) => path.join(steam_path, 'logs')).join(', ')}`);
@@ -1243,6 +1284,7 @@ class Bot extends EventEmitter {
         this.emit('exit-steam');
 
         this.isSteamWorking = false;
+        this.steamClientInitialized = false;
         this.time_steamwebhelper_cleanup = 0;
         this.steamwebhelper_cleanup_done = false;
         this.steamwebhelper_frozen_pid = -1;
@@ -1289,6 +1331,7 @@ class Bot extends EventEmitter {
         this.time_steamStatusLog = 0;
         this.shouldRestart = false;
         this.steamReadyLogged = false;
+        this.steamClientInitialized = false;
         this.steamwebhelper_cleanup_done = false;
         this.steamwebhelper_frozen_pid = -1;
         this.gamePid = -1;
@@ -1621,13 +1664,14 @@ class Bot extends EventEmitter {
                 }
                 else {
                     if (!this.procFirejailGame) {
-                        if (!this.time_game_launch) {
-                            this.time_game_launch = time + TIMEOUT_LAUNCH_GAME;
-                            this.log(`Steam ready; launching game in ${TIMEOUT_LAUNCH_GAME / 1000} seconds.`);
+                        this.pollSteamReady();
+                        if (!this.steamClientInitialized) {
+                            if (!this.time_steamStatusLog || time > this.time_steamStatusLog) {
+                                this.log('Steam ready; waiting for client initialization log marker before launching game.');
+                                this.time_steamStatusLog = time + 10000;
+                            }
                             return;
                         }
-                        if (time < this.time_game_launch)
-                            return;
 
                         this.time_game_launch = 0;
                         this.spawnGame();
