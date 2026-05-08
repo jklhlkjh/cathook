@@ -762,7 +762,8 @@ xvfb_display_running() {
     if [ -f "$lock_path" ]; then
         lock_pid="$(tr -d '[:space:]' <"$lock_path" 2>/dev/null || true)"
         if is_pid_running "$lock_pid"; then
-            return 0
+            echo "Display $display is already in use by pid $lock_pid. Stop that display or set CAT_DISPLAY to another display number." >&2
+            exit 1
         fi
     fi
 
