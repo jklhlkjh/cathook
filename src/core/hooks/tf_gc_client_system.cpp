@@ -11,7 +11,6 @@ V  o o  V  file: src/core/hooks/tf_gc_client_system.cpp
 
 #include "tf_gc_client_system.hpp"
 
-#include <cstddef>
 #include <cstdint>
 
 #include "features/menu/config.hpp"
@@ -20,10 +19,11 @@ namespace
 {
 
 constexpr int shared_object_created_event = 0;
+constexpr int shared_object_updated_event = 1;
 constexpr unsigned int tf_game_server_lobby_type = 2004;
 constexpr unsigned int tf_lobby_invite_type = 2008;
-constexpr std::ptrdiff_t lobby_invite_id_offset = 0x20;
 constexpr int shared_object_type_vfunc_index = 2;
+constexpr int lobby_invite_id_vfunc_index = 12;
 
 #if defined(CATHOOK_TEXTMODE) && CATHOOK_TEXTMODE
 constexpr bool textmode_auto_casual_join = true;
@@ -32,6 +32,7 @@ constexpr bool textmode_auto_casual_join = false;
 #endif
 
 using shared_object_type_fn = unsigned int (*)(void* self);
+using lobby_invite_id_fn = std::uint64_t (*)(void* self);
 
 bool auto_casual_join_enabled()
 {
@@ -62,8 +63,14 @@ std::uint64_t get_lobby_invite_id(void* shared_object)
     return 0;
   }
 
-  auto* bytes = static_cast<std::uint8_t*>(shared_object);
-  return *reinterpret_cast<std::uint64_t*>(bytes + lobby_invite_id_offset);
+  auto** vtable = *reinterpret_cast<void***>(shared_object);
+  if (vtable == nullptr || vtable[lobby_invite_id_vfunc_index] == nullptr)
+  {
+    return 0;
+  }
+
+  auto get_lobby_id = reinterpret_cast<lobby_invite_id_fn>(vtable[lobby_invite_id_vfunc_index]);
+  return get_lobby_id(shared_object);
 }
 
 void accept_lobby_invite(void* self, void* shared_object)
@@ -96,33 +103,27 @@ void join_matchmade_lobby(void* self)
 
 void tf_gc_client_system_so_event_hook(void* self, void* shared_object, const int event_type)
 {
-  if (!auto_casual_join_enabled() || event_type != shared_object_created_event)
-  {
-    if (tf_gc_client_system_so_event_original != nullptr)
-    {
-      tf_gc_client_system_so_event_original(self, shared_object, event_type);
-    }
-    return;
-  }
-
   const unsigned int object_type = get_shared_object_type(shared_object);
-  if (object_type == tf_lobby_invite_type)
-  {
-    accept_lobby_invite(self, shared_object);
-  }
-  else if (object_type == tf_game_server_lobby_type)
-  {
-    if (tf_gc_client_system_so_event_original != nullptr)
-    {
-      tf_gc_client_system_so_event_original(self, shared_object, event_type);
-    }
-    join_matchmade_lobby(self);
-    return;
-  }
 
   if (tf_gc_client_system_so_event_original != nullptr)
   {
     tf_gc_client_system_so_event_original(self, shared_object, event_type);
   }
-}
 
+  if (!auto_casual_join_enabled() ||
+      (event_type != shared_object_created_event && event_type != shared_object_updated_event))
+  {
+    return;
+  }
+
+  if (object_type == tf_lobby_invite_type)
+  {
+    accept_lobby_invite(self, shared_object);
+    return;
+  }
+
+  if (object_type == tf_game_server_lobby_type)
+  {
+    join_matchmade_lobby(self);
+  }
+}

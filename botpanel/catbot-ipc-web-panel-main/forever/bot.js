@@ -474,16 +474,37 @@ function ensure_directory_not_symlink(directory_path) {
     fs.mkdirSync(directory_path, { recursive: true });
 }
 
+function get_default_network_interface() {
+    try {
+        const default_route = child_process.execFileSync('ip', ['-o', '-4', 'route', 'show', 'default'], { encoding: 'utf8' }).trim();
+        const fields = default_route.split(/\s+/);
+        const dev_index = fields.indexOf('dev');
+
+        if (dev_index !== -1 && dev_index + 1 < fields.length)
+            return fields[dev_index + 1];
+    } catch (error) { }
+
+    try {
+        return child_process.execSync("route -n | grep '^0\\.0\\.0\\.0' | grep -o '[^ ]*$' | head -n 1", { encoding: 'utf8' }).trim();
+    } catch (error) { }
+
+    return '';
+}
+
 if (!process.env.SUDO_USER) {
     console.error('[ERROR] Could not find $SUDO_USER');
     process.exit(1);
 }
 
-const USER = { name: process.env.SUDO_USER, uid: Number.parseInt(child_process.execSync("id -u " + process.env.SUDO_USER).toString().trim()), home: child_process.execSync(`printf ~${process.env.SUDO_USER}`).toString(), interface: child_process.execSync("route -n | grep '^0\.0\.0\.0' | grep -o '[^ ]*$' | head -n 1").toString().trim(), SUPPORTS_FJ_NET: true };
-try {
-    child_process.execSync(`firejail --quiet --noprofile --net=${USER.interface} bash -c "ping -q -c 1 -W 1 1.1.1.1 >/dev/null && echo ok"`)
-} catch (error) {
+const USER = { name: process.env.SUDO_USER, uid: Number.parseInt(child_process.execSync("id -u " + process.env.SUDO_USER).toString().trim()), home: child_process.execSync(`printf ~${process.env.SUDO_USER}`).toString(), interface: get_default_network_interface(), SUPPORTS_FJ_NET: true };
+if (!USER.interface) {
     USER.SUPPORTS_FJ_NET = false;
+} else {
+    try {
+        child_process.execSync(`firejail --quiet --noprofile --net=${USER.interface} bash -c "ping -q -c 1 -W 1 1.1.1.1 >/dev/null && echo ok"`)
+    } catch (error) {
+        USER.SUPPORTS_FJ_NET = false;
+    }
 }
 
 console.log('Main user name: ' + USER.name);

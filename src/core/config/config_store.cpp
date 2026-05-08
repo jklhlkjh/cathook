@@ -204,9 +204,15 @@ void config_store::import_config(const Config& config)
     set_bool("aimbot.scoped_only", config.aimbot.scoped_only);
     set_bool("aimbot.wait_for_headshot", config.aimbot.wait_for_headshot);
     set_bool("aimbot.ignore_friends", config.aimbot.ignore_friends);
+#if defined(CATHOOK_TEXTMODE) && CATHOOK_TEXTMODE
+    set_bool("ipc.enabled", true);
+    set_bool("ipc.auto_connect", true);
+    set_bool("ipc.auto_ignore_local_bots", true);
+#else
     set_bool("ipc.enabled", config.ipc.enabled);
     set_bool("ipc.auto_connect", config.ipc.auto_connect);
     set_bool("ipc.auto_ignore_local_bots", config.ipc.auto_ignore_local_bots);
+#endif
     set_bool("random_crits.force_crits", config.random_crits.force_crits);
     set_bool("random_crits.always_melee_crit", config.random_crits.always_melee_crit);
     set_bool("random_crits.save_bucket", config.random_crits.save_bucket);
@@ -550,6 +556,11 @@ void config_store::export_config(Config& config) const
     config.ipc.enabled = get_bool("ipc.enabled", config.ipc.enabled);
     config.ipc.auto_connect = get_bool("ipc.auto_connect", config.ipc.auto_connect);
     config.ipc.auto_ignore_local_bots = get_bool("ipc.auto_ignore_local_bots", config.ipc.auto_ignore_local_bots);
+#if defined(CATHOOK_TEXTMODE) && CATHOOK_TEXTMODE
+    config.ipc.enabled = true;
+    config.ipc.auto_connect = true;
+    config.ipc.auto_ignore_local_bots = true;
+#endif
     config.random_crits.force_crits = get_bool(
         "random_crits.force_crits",
         get_bool("crithack.force_crits", config.random_crits.force_crits));

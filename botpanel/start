@@ -63,7 +63,8 @@ fix_workspace_permissions() {
         -name "fix-oldshi" -o \
         -name "install-catbots" -o \
         -name "remove-legacy" -o \
-        -name "uninstall" \
+        -name "uninstall" -o \
+        -path "*/scripts/ns-*" \
     \) -exec chmod 0755 {} +
 }
 
@@ -207,8 +208,8 @@ install_dependency_packages() {
     if command -v apt-get >/dev/null 2>&1; then
         local apt_packages=(
             firejail
+            iptables
             iproute2
-            net-tools
             nodejs
             npm
             xauth
@@ -234,37 +235,37 @@ install_dependency_packages() {
 
     if command -v pacman >/dev/null 2>&1; then
         run_as_root pacman -Sy --needed --noconfirm \
-            firejail iproute2 net-tools nodejs npm xorg-xauth xpra
+            firejail iproute2 iptables nodejs npm xorg-xauth xpra
         return
     fi
 
     if command -v dnf >/dev/null 2>&1; then
         run_as_root dnf -y install \
-            firejail iproute net-tools nodejs npm xorg-x11-drv-dummy xorg-x11-xauth xpra
+            firejail iproute iptables nodejs npm xorg-x11-drv-dummy xorg-x11-xauth xpra
         return
     fi
 
     if command -v yum >/dev/null 2>&1; then
         run_as_root yum -y install \
-            firejail iproute net-tools nodejs npm xorg-x11-drv-dummy xorg-x11-xauth xpra
+            firejail iproute iptables nodejs npm xorg-x11-drv-dummy xorg-x11-xauth xpra
         return
     fi
 
     if command -v zypper >/dev/null 2>&1; then
         run_as_root zypper --non-interactive install --no-recommends \
-            firejail iproute2 net-tools nodejs npm xauth xorg-x11-server xorg-x11-server-extra xpra
+            firejail iproute2 iptables nodejs npm xauth xorg-x11-server xorg-x11-server-extra xpra
         return
     fi
 
     if command -v apk >/dev/null 2>&1; then
         run_as_root apk add --no-cache \
-            firejail iproute2 net-tools nodejs npm xauth xpra
+            firejail iproute2 iptables nodejs npm xauth xpra
         return
     fi
 
     if command -v xbps-install >/dev/null 2>&1; then
         run_as_root xbps-install -Sy \
-            firejail iproute2 net-tools nodejs xpra
+            firejail iproute2 iptables nodejs xpra
         return
     fi
 
@@ -290,8 +291,12 @@ collect_missing_runtime_dependencies() {
         missing+=("npm")
     fi
 
-    if need_command ip && need_command route; then
-        missing+=("iproute2/net-tools")
+    if need_command ip; then
+        missing+=("iproute2")
+    fi
+
+    if need_command iptables; then
+        missing+=("iptables")
     fi
 
     if [ "${#missing[@]}" -ne 0 ]; then

@@ -690,7 +690,7 @@ void stop_ipc_worker()
 
 void set_enabled(bool enabled)
 {
-  ipc_enabled = enabled;
+  ipc_enabled = textmode_build() || enabled;
   if (!ipc_enabled)
   {
     shutdown();
@@ -699,7 +699,7 @@ void set_enabled(bool enabled)
 
 void set_auto_ignore_enabled(bool enabled)
 {
-  auto_ignore_enabled = enabled;
+  auto_ignore_enabled = textmode_build() || enabled;
 }
 
 void start()
@@ -714,9 +714,16 @@ void start()
 void tick()
 {
   const auto force_ipc = textmode_build();
-  set_enabled(force_ipc || config.ipc.enabled);
+  if (force_ipc)
+  {
+    config.ipc.enabled = true;
+    config.ipc.auto_connect = true;
+    config.ipc.auto_ignore_local_bots = true;
+  }
+
+  set_enabled(config.ipc.enabled);
   set_auto_ignore_enabled(config.ipc.auto_ignore_local_bots);
-  if (ipc_state == nullptr && !force_ipc && !config.ipc.auto_connect)
+  if (ipc_state == nullptr && !config.ipc.auto_connect)
   {
     return;
   }

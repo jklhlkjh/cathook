@@ -2027,6 +2027,12 @@ static void draw_autoitem_content() {
 }
 
 static void draw_ipc_content() {
+#if defined(CATHOOK_TEXTMODE) && CATHOOK_TEXTMODE
+  config.ipc.enabled = true;
+  config.ipc.auto_connect = true;
+  config.ipc.auto_ignore_local_bots = true;
+#endif
+
   const bool connected = cat_ipc::client::connected();
   const int peer_id = cat_ipc::client::peer_id();
 
@@ -2035,6 +2041,11 @@ static void draw_ipc_content() {
     cat_menu::checkbox("Enable IPC", &config.ipc.enabled);
     cat_menu::checkbox("Auto connect", &config.ipc.auto_connect);
     cat_menu::checkbox("Auto ignore local bots", &config.ipc.auto_ignore_local_bots);
+#if defined(CATHOOK_TEXTMODE) && CATHOOK_TEXTMODE
+    config.ipc.enabled = true;
+    config.ipc.auto_connect = true;
+    config.ipc.auto_ignore_local_bots = true;
+#endif
 
     ImGui::Dummy(ImVec2(0.0f, 4.0f));
     ImGui::PushStyleColor(ImGuiCol_Text, connected ? cat_menu::k_accent : cat_menu::k_text_soft);
@@ -2059,16 +2070,22 @@ static void draw_ipc_content() {
       cat_ipc::client::set_enabled(true);
       cat_ipc::client::start();
     }
+#if !defined(CATHOOK_TEXTMODE) || !CATHOOK_TEXTMODE
     if (cat_menu::accent_button("Disconnect", ImVec2(0.0f, 22.0f), true)) {
       config.ipc.enabled = false;
       cat_ipc::client::shutdown();
     }
+#endif
   });
   cat_menu::flow_panel("Notes", 2, 94.0f, [&]() {
     ImGui::PushStyleColor(ImGuiCol_Text, cat_menu::k_text_soft);
     ImGui::TextUnformatted("Connect uses the catbot shared memory server.");
+#if defined(CATHOOK_TEXTMODE) && CATHOOK_TEXTMODE
+    ImGui::TextUnformatted("Textmode forces IPC on.");
+#else
     ImGui::TextUnformatted("Auto connect retries while IPC is enabled.");
     ImGui::TextUnformatted("Disconnect disables IPC until enabled again.");
+#endif
     ImGui::PopStyleColor();
   });
   cat_menu::end_flow_layout();
