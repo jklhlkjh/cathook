@@ -6,11 +6,13 @@
 
 echo "Stopping... (this may take a while)"
 
+default_headless_display="${CAT_DEFAULT_DISPLAY:-:699}"
+
 [ -f /tmp/cat-ipc-server.pid ] && sudo kill $(cat /tmp/cat-ipc-server.pid)
 [ -f /tmp/ncat-cathook-webpanel.pid ] && PID="$(cat /tmp/ncat-cathook-webpanel.pid)" && sudo kill -SIGINT "$PID" && tail --pid="$PID" -f /dev/null
 
 if [ "${CAT_VISIBLE_WINDOWS:-0}" != "1" ] && command -v xpra >/dev/null 2>&1; then
-    display="${CAT_XPRA_DISPLAY:-${CAT_DISPLAY:-${CAT_XVFB_DISPLAY:-:100}}}"
+    display="${CAT_XPRA_DISPLAY:-${CAT_DISPLAY:-${CAT_XVFB_DISPLAY:-$default_headless_display}}}"
     xpra stop "$display" >/tmp/cat-catbot-xpra-stop.log 2>&1 || true
 fi
 

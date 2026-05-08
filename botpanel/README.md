@@ -20,9 +20,10 @@ USERNAME:PASSWORD
 `./botpanel/start` starts the headless bot display with xpra when available,
 or Xvfb on distros where xpra is not packaged.
 
-- Default display: `:100`
-- Override display: `CAT_XPRA_DISPLAY=:101 ./botpanel/start`
-- Legacy override still accepted: `CAT_XVFB_DISPLAY=:101 ./botpanel/start`
+- Default display: `:699`
+- Override display: `CAT_DISPLAY=:700 ./botpanel/start`
+- Xpra-specific override: `CAT_XPRA_DISPLAY=:700 ./botpanel/start`
+- Legacy Xvfb override still accepted: `CAT_XVFB_DISPLAY=:700 ./botpanel/start`
 - Use an existing desktop display instead: `CAT_VISIBLE_WINDOWS=1 ./botpanel/start`
 - After game IPC has stayed connected for 10 seconds, the panel freezes the main `steamwebhelper` in that bot's Steam process tree and kills its child helper processes.
 - Disable helper cleanup: `CAT_STEAMWEBHELPER_CLEANUP=0 ./botpanel/start`

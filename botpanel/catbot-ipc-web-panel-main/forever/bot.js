@@ -12,7 +12,7 @@ const config = require('./config');
 const steam_id = require('../steam_id');
 
 const CATHOOK_ROOT = process.env.CATHOOK_ROOT || '/opt/cathook';
-const BOT_DISPLAY = process.env.DISPLAY || ':1';
+const BOT_DISPLAY = process.env.DISPLAY || process.env.CAT_DEFAULT_DISPLAY || ':699';
 const BOT_XAUTHORITY = process.env.XAUTHORITY || path.join(process.env.HOME || '', '.Xauthority');
 const VISIBLE_WINDOWS = process.env.CAT_VISIBLE_WINDOWS === '1';
 const TEXTMODE_GAME = process.env.CAT_TEXTMODE_GAME === '1' || (!VISIBLE_WINDOWS && process.env.CAT_TEXTMODE_GAME !== '0');

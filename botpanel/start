@@ -10,6 +10,7 @@ accounts_file="$setup_root/accounts.txt"
 user_instances_dir="$setup_root/user_instances"
 install_root="${CATHOOK_ROOT:-/opt/cathook}"
 requested_visible_windows="${CAT_VISIBLE_WINDOWS:-0}"
+default_headless_display="${CAT_DEFAULT_DISPLAY:-:699}"
 for system_path_entry in /usr/local/sbin /usr/sbin /sbin; do
     case ":$PATH:" in
         *":$system_path_entry:"*) ;;
@@ -25,7 +26,7 @@ if [ "$requested_visible_windows" = "1" ]; then
     use_xvfb=0
 else
     visible_windows=0
-    display="${CAT_XPRA_DISPLAY:-${CAT_DISPLAY:-${CAT_XVFB_DISPLAY:-:100}}}"
+    display="${CAT_XPRA_DISPLAY:-${CAT_DISPLAY:-${CAT_XVFB_DISPLAY:-$default_headless_display}}}"
     use_xpra=1
     use_xvfb=0
 fi
@@ -243,19 +244,19 @@ install_dependency_packages() {
 
     if command -v pacman >/dev/null 2>&1; then
         run_as_root pacman -Sy --needed --noconfirm \
-            firejail iproute2 iptables nodejs npm xorg-xauth xpra
+            firejail iproute2 iptables nodejs npm xorg-server-xvfb xorg-xauth xpra
         return
     fi
 
     if command -v dnf >/dev/null 2>&1; then
         run_as_root dnf -y install \
-            firejail iproute iptables nodejs npm xorg-x11-drv-dummy xorg-x11-xauth xpra
+            firejail iproute iptables nodejs npm xorg-x11-drv-dummy xorg-x11-server-Xvfb xorg-x11-xauth xpra
         return
     fi
 
     if command -v yum >/dev/null 2>&1; then
         run_as_root yum -y install \
-            firejail iproute iptables nodejs npm xorg-x11-drv-dummy xorg-x11-xauth xpra
+            firejail iproute iptables nodejs npm xorg-x11-drv-dummy xorg-x11-server-Xvfb xorg-x11-xauth xpra
         return
     fi
 
@@ -267,13 +268,13 @@ install_dependency_packages() {
 
     if command -v apk >/dev/null 2>&1; then
         run_as_root apk add --no-cache \
-            firejail iproute2 iptables nodejs npm xauth xpra
+            firejail iproute2 iptables nodejs npm xauth xvfb xpra
         return
     fi
 
     if command -v xbps-install >/dev/null 2>&1; then
         run_as_root xbps-install -Sy \
-            firejail iproute2 iptables nodejs xpra
+            firejail iproute2 iptables nodejs xorg-server-xvfb xpra
         return
     fi
 
@@ -691,11 +692,11 @@ run_xpra_start_variant() {
 
 start_xpra() {
     if [ "$use_xpra" != "1" ]; then
-        return
+        return 0
     fi
 
     if xpra_display_running; then
-        return
+        return 0
     fi
 
     : >"$xpra_log"
@@ -710,7 +711,15 @@ start_xpra() {
     fi
 
     if run_xpra_start_variant "minimal"; then
-        return
+        return 0
+    fi
+
+    if command -v Xvfb >/dev/null 2>&1; then
+        echo "Xpra failed to start display $display; falling back to Xvfb." >&2
+        use_xpra=0
+        use_xvfb=1
+        launcher_version="legacy_style_runtime_bundle_xvfb"
+        return 0
     fi
 
     echo "Xpra failed to start display $display. Log:" >&2
