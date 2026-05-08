@@ -576,7 +576,9 @@ static bool ensure_swapchain_resources(VkSwapchainKHR swapchain, const render_qu
     return true;
   }
 
+  const auto swapchain_format = active_swapchain_format;
   destroy_swapchain_resources(true);
+  active_swapchain_format = swapchain_format;
 
   if (!create_overlay_render_pass() || !create_frame_resources(swapchain, render_queue.family)) {
     destroy_swapchain_resources(true);

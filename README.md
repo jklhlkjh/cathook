@@ -8,8 +8,6 @@
 
 ##
 
-## USE OpenGL, Vulkan is currently UNSTABLE
-
 ## Risk of Manual Ban
 
 Doesnt matter what cheat you use, get ready for a gameban.
