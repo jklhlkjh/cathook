@@ -50,6 +50,7 @@ const TIMEOUT_IPC_STATE = Number.parseInt(process.env.CAT_IPC_TIMEOUT_SECONDS ||
 // Time to wait for steam to be "ready"
 const TIMEOUT_STEAM_RUNNING = Number.parseInt(process.env.CAT_STEAM_TIMEOUT_SECONDS || '300', 10) * 1000;
 const TIMEOUT_STEAM_ASSUME_READY = Number.parseInt(process.env.CAT_STEAM_READY_SECONDS || '0', 10) * 1000;
+const steam_logged_in_game_delay = Number.parseInt(process.env.CAT_STEAM_LOGGED_IN_GAME_DELAY_SECONDS || '30', 10) * 1000;
 const STEAMWEBHELPER_CLEANUP_ENABLED = process.env.CAT_STEAMWEBHELPER_CLEANUP === '1' || config.steamwebhelper_cleanup === true;
 const STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE = Number.parseInt(process.env.CAT_STEAMWEBHELPER_CLEANUP_SECONDS || '10', 10);
 const STEAMWEBHELPER_CLEANUP_DELAY = (Number.isFinite(STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) ? Math.max(0, STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) : 10) * 1000;
@@ -647,6 +648,7 @@ class Bot extends EventEmitter {
         this.isSteamWorking = false;
         this.time_steamWorking = 0;
         this.time_steamAssumeReady = 0;
+        this.time_steamLoggedIn = 0;
         this.time_game_launch = 0;
         this.time_steam_client_initialized_game_launch = 0;
         this.time_gameCheck = 0;
@@ -919,8 +921,54 @@ class Bot extends EventEmitter {
         return null;
     }
 
+    steamid32FromSteamLogs() {
+        const log_paths = this.steamLogPaths().filter((log_path) => [
+            'connection_log.txt',
+            'console_log.txt',
+            'steamui_login.txt',
+            'webhelper_js.txt'
+        ].includes(path.basename(log_path)));
+
+        let best_account_id32 = null;
+        let best_position = -1;
+        for (const log_path of log_paths) {
+            let text = '';
+            try {
+                text = fs.readFileSync(log_path, 'utf8');
+            } catch (error) {
+                continue;
+            }
+
+            const login_ok_position = Math.max(
+                text.lastIndexOf('RecvMsgClientLogOnResponse()'),
+                text.lastIndexOf('Received logon success response'),
+                text.lastIndexOf('OnLoginStateChange')
+            );
+            if (login_ok_position === -1)
+                continue;
+
+            const search_text = text.slice(Math.max(0, login_ok_position - 4096), login_ok_position + 4096);
+            const matches = [...search_text.matchAll(/\[U:1:(\d+)\]/g)]
+                .map((match) => Number.parseInt(match[1], 10))
+                .filter((account_id32) => Number.isFinite(account_id32) && account_id32 > 0);
+            if (!matches.length)
+                continue;
+
+            if (login_ok_position > best_position) {
+                best_position = login_ok_position;
+                best_account_id32 = matches[matches.length - 1];
+            }
+        }
+
+        return best_account_id32;
+    }
+
+    steamid32FromSteamState() {
+        return this.steamid32FromLoginUsers() || this.steamid32FromSteamLogs();
+    }
+
     steamLoggedIn() {
-        return !!this.steamid32FromLoginUsers();
+        return !!this.steamid32FromSteamState();
     }
 
     sandboxHomePath(host_path) {
@@ -1045,6 +1093,14 @@ class Bot extends EventEmitter {
         });
     }
 
+    clearSteamStartupLogs() {
+        for (const log_path of this.existingSteamLogPaths()) {
+            try {
+                fs.unlinkSync(log_path);
+            } catch (error) { }
+        }
+    }
+
     logSteamTails(prefix, line_count) {
         const logs = this.existingSteamLogPaths();
         if (!logs.length) {
@@ -1087,6 +1143,13 @@ class Bot extends EventEmitter {
                 this.time_steamStatusLog = Date.now() + 10000;
             }
             return false;
+        }
+
+        if (!this.time_steamLoggedIn) {
+            this.time_steamLoggedIn = Date.now();
+            const delay_until = this.time_steamLoggedIn + steam_logged_in_game_delay;
+            this.time_steam_client_initialized_game_launch = Math.max(this.time_steam_client_initialized_game_launch || 0, delay_until);
+            this.log(`Steam logged in; delaying game launch for ${steam_logged_in_game_delay / 1000} seconds to let SteamAPI settle.`);
         }
 
         this.ensureSharedSteamapps();
@@ -1228,6 +1291,7 @@ class Bot extends EventEmitter {
             fs.chownSync(self.home, USER.uid, USER.uid);
         }
         self.prepareSteamInstall();
+        self.clearSteamStartupLogs();
         const xauthority_path = self.ensureVisibleXauthority();
 
         var steambin = this.steamLaunchCommand();
@@ -1376,9 +1440,9 @@ class Bot extends EventEmitter {
         }
 
         const game_preload = preload_value(filename);
-        const steamid32 = self.steamid32FromLoginUsers() || '';
+        const steamid32 = self.steamid32FromSteamState() || '';
         if (!steamid32) {
-            self.log(`SteamID32 for ${self.account.login} is not available from loginusers.vdf yet; delaying TF2 launch until Steam is logged in.`);
+            self.log(`SteamID32 for ${self.account.login} is not available from Steam state yet; delaying TF2 launch until Steam is logged in.`);
             self.isSteamWorking = false;
             self.steamClientInitialized = false;
             self.removeGamePreloadLibrary();
@@ -1426,6 +1490,7 @@ class Bot extends EventEmitter {
 
         this.isSteamWorking = false;
         this.steamClientInitialized = false;
+        this.time_steamLoggedIn = 0;
         this.time_steam_client_initialized_game_launch = 0;
         this.time_steamwebhelper_cleanup = 0;
         this.steamwebhelper_cleanup_done = false;
@@ -1456,6 +1521,7 @@ class Bot extends EventEmitter {
         this.ipcLastHeartbeat = 0;
         this.gameStarted = 0;
         this.gamePid = -1;
+        this.time_steamLoggedIn = 0;
         this.time_game_launch = 0;
         this.time_steam_client_initialized_game_launch = 0;
         this.time_gameCheck = 0;
@@ -1473,6 +1539,7 @@ class Bot extends EventEmitter {
         this.isSteamWorking = false;
         this.time_steamWorking = 0;
         this.time_steamAssumeReady = 0;
+        this.time_steamLoggedIn = 0;
         this.time_game_launch = 0;
         this.time_steam_client_initialized_game_launch = 0;
         this.time_gameCheck = 0;
