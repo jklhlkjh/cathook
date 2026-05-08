@@ -321,13 +321,6 @@ select_display_backend() {
         return
     fi
 
-    if command -v xpra >/dev/null 2>&1; then
-        use_xpra=1
-        use_xvfb=0
-        launcher_version="legacy_style_runtime_bundle_xpra"
-        return
-    fi
-
     if command -v Xvfb >/dev/null 2>&1; then
         use_xpra=0
         use_xvfb=1
@@ -335,8 +328,28 @@ select_display_backend() {
         return
     fi
 
+    if command -v xpra >/dev/null 2>&1; then
+        use_xpra=1
+        use_xvfb=0
+        launcher_version="legacy_style_runtime_bundle_xpra"
+        return
+    fi
+
     echo "Headless mode requires xpra or Xvfb. Run ./install-deps, then try again." >&2
     exit 1
+}
+
+ensure_utmp_file() {
+    if [ "$use_xpra" != "1" ]; then
+        return
+    fi
+
+    if [ -e /var/run/utmp ] || [ -e /run/utmp ]; then
+        return
+    fi
+
+    run_as_root touch /run/utmp
+    run_as_root chmod 0664 /run/utmp
 }
 
 have_prebuilt_runtime() {
@@ -771,6 +784,7 @@ start_xvfb() {
     echo "Starting Xvfb display $display..."
     Xvfb "$display" -screen 0 "$screen_size" -nolisten tcp -noreset -ac >"$xvfb_log" 2>&1 &
     echo "$!" >"$xvfb_pid_file"
+    sleep 1
 
     for _ in 1 2 3 4 5 6 7 8 9 10; do
         if xvfb_display_running; then
@@ -942,6 +956,7 @@ ensure_web_bundle
 ensure_accounts_file
 ensure_user_instances
 ensure_firejail_config
+ensure_utmp_file
 ensure_xpra_config
 start_xpra
 start_xvfb

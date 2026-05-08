@@ -17,8 +17,8 @@ USERNAME:PASSWORD
 
 # Cat botpanel launcher
 
-`./botpanel/start` starts the headless bot display with xpra when available,
-or Xvfb on distros where xpra is not packaged.
+`./botpanel/start` starts the headless bot display with Xvfb when available,
+or xpra as a fallback on systems where Xvfb is not installed.
 
 - Default display: `:699`
 - Override display: `CAT_DISPLAY=:700 ./botpanel/start`
@@ -32,7 +32,7 @@ or Xvfb on distros where xpra is not packaged.
 - Host Steam content is shared at `/opt/steamapps`. Botpanel bind-mounts that path to the detected host Steam `steamapps` directory, then bot instances symlink their own `steamapps` directory to it. Debian/Ubuntu and Arch Steam layouts are checked.
 - The host Steam path is detected automatically. If detection fails, the launcher prints and writes `/tmp/cat-steamapps-detect.log` with every checked path.
 
-`./botpanel/stop` stops the matching xpra display unless `CAT_VISIBLE_WINDOWS=1` is set.
+`./botpanel/stop` stops the matching headless display unless `CAT_VISIBLE_WINDOWS=1` is set.
 
 `./botpanel/fix-oldshi` repairs old botpanel path layouts that created partial
 Steam directories or recursive `/opt/steamapps` symlinks. Stop the panel first;

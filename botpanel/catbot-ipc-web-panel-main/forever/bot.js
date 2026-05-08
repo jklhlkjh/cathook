@@ -12,9 +12,9 @@ const config = require('./config');
 const steam_id = require('../steam_id');
 
 const CATHOOK_ROOT = process.env.CATHOOK_ROOT || '/opt/cathook';
-const BOT_DISPLAY = process.env.DISPLAY || process.env.CAT_DEFAULT_DISPLAY || ':699';
-const BOT_XAUTHORITY = process.env.XAUTHORITY || path.join(process.env.HOME || '', '.Xauthority');
 const VISIBLE_WINDOWS = process.env.CAT_VISIBLE_WINDOWS === '1';
+const BOT_DISPLAY = process.env.DISPLAY || process.env.CAT_DEFAULT_DISPLAY || ':699';
+const BOT_XAUTHORITY = VISIBLE_WINDOWS ? (process.env.XAUTHORITY || path.join(process.env.HOME || '', '.Xauthority')) : '';
 const TEXTMODE_GAME = process.env.CAT_TEXTMODE_GAME === '1' || (!VISIBLE_WINDOWS && process.env.CAT_TEXTMODE_GAME !== '0');
 const GDB_CRASH_REPORTS = process.env.CAT_GDB_CRASH_REPORTS === '1' || config.gdb_crash_reports === true;
 const discord_reports = process.env.CATHOOK_DISCORD_REPORTS !== '0' && config.discord_reports !== false;
@@ -488,6 +488,22 @@ function get_default_network_interface() {
     return '';
 }
 
+function firejail_network_works(interface_name) {
+    try {
+        child_process.execFileSync('firejail', [
+            '--quiet',
+            '--noprofile',
+            `--net=${interface_name}`,
+            'bash',
+            '-c',
+            'ping -q -c 1 -W 1 1.1.1.1 >/dev/null 2>&1'
+        ], { stdio: 'ignore' });
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
 if (!process.env.SUDO_USER) {
     console.error('[ERROR] Could not find $SUDO_USER');
     process.exit(1);
@@ -497,11 +513,8 @@ const USER = { name: process.env.SUDO_USER, uid: Number.parseInt(child_process.e
 if (!USER.interface) {
     USER.SUPPORTS_FJ_NET = false;
 } else {
-    try {
-        child_process.execSync(`firejail --quiet --noprofile --net=${USER.interface} bash -c "ping -q -c 1 -W 1 1.1.1.1 >/dev/null && echo ok"`)
-    } catch (error) {
+    if (!firejail_network_works(USER.interface))
         USER.SUPPORTS_FJ_NET = false;
-    }
 }
 
 console.log('Main user name: ' + USER.name);
