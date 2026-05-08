@@ -256,7 +256,8 @@ install_dependencies() {
 build_and_install_runtime() {
     local dev_mode="${CATHOOK_DEV_MODE:-${CAT_DEV_MODE:-0}}"
 
-    run_as_root env CAT_BUILD_MODE="${CAT_BUILD_MODE:-both}" CATHOOK_ROOT="${CATHOOK_ROOT:-/opt/cathook}" CATHOOK_DEV_MODE="$dev_mode" bash "$repo_root/build.sh" --both
+    echo "Building and installing Cat textmode runtime..."
+    run_as_root env CAT_BUILD_MODE="${CAT_BUILD_MODE:-textmode}" CATHOOK_ROOT="${CATHOOK_ROOT:-/opt/cathook}" CATHOOK_DEV_MODE="$dev_mode" bash "$repo_root/build.sh" --textmode
 }
 
 build_web_panel() {
