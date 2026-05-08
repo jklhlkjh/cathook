@@ -41,8 +41,21 @@ const cc = new CathookConsole();
 
 var forever = new Forever(app, cc);
 
+function connect_ipc_console() {
+    cc.command('connect', {}, function (data) {
+        if (data && data.status === 'success') {
+            console.log('Connected to cathook IPC server');
+            return;
+        }
+
+        const reason = data && data.error ? data.error : 'no response';
+        console.log(`Failed to connect to cathook IPC server: ${reason}; retrying.`);
+        setTimeout(connect_ipc_console, 1000);
+    });
+}
+
 cc.once('init', () => {
-    cc.command('connect');
+    connect_ipc_console();
 });
 cc.on('exit', () => { });
 

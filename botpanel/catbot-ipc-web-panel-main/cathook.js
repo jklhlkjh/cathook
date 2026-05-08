@@ -10,6 +10,7 @@ class CathookConsole extends EventEmitter {
         super();
         var self = this;
         this.init = false;
+        this.next_cmdid = 1;
         this.process = child_process.spawn(CONSOLE_PATH);
         this.process.on('exit', function (code) {
             self.init = false;
@@ -45,11 +46,20 @@ class CathookConsole extends EventEmitter {
         });
     }
     command(cmd, data, callback) {
-        data = data || {};
-        extend(data, { "command": cmd });
+        data = extend({}, data || {}, { "command": cmd });
+        if (callback) {
+            const cmdid = String(this.next_cmdid++);
+            data.cmdid = cmdid;
+            const handler = (response) => {
+                if (!response || response.cmdid !== cmdid)
+                    return;
+
+                this.removeListener('data', handler);
+                callback(response);
+            };
+            this.on('data', handler);
+        }
         this.process.stdin.write(JSON.stringify(data) + '\n');
-        if (callback)
-            this.once('data', callback);
     }
     stop() {
         this.command("exit", {});
