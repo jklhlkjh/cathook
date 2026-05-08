@@ -60,6 +60,7 @@ fix_workspace_permissions() {
         -name "start.legacy" -o \
         -name "stop" -o \
         -name "update" -o \
+        -name "fix-oldshi" -o \
         -name "install-catbots" -o \
         -name "remove-legacy" -o \
         -name "uninstall" \

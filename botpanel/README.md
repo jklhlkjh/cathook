@@ -33,6 +33,11 @@ or Xvfb on distros where xpra is not packaged.
 
 `./botpanel/stop` stops the matching xpra display unless `CAT_VISIBLE_WINDOWS=1` is set.
 
+`./botpanel/fix-oldshi` repairs old botpanel path layouts that created partial
+Steam directories or recursive `/opt/steamapps` symlinks. Stop the panel first;
+the script refuses to touch live bot paths unless `CAT_FIX_OLD_PANEL_FORCE=1` is
+set.
+
 `./botpanel/update` updates this single repository, installs dependencies,
 builds Cat default/textmode libraries, builds the bundled IPC server, installs
 web panel npm dependencies, and refreshes navmeshes in `/opt/cathook/navmeshes`.

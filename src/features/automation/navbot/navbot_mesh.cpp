@@ -84,6 +84,21 @@ public:
     return valid_ && offset_ + count <= bytes_.size();
   }
 
+  [[nodiscard]] size_t offset() const
+  {
+    return offset_;
+  }
+
+  [[nodiscard]] size_t remaining() const
+  {
+    if (offset_ >= bytes_.size())
+    {
+      return 0;
+    }
+
+    return bytes_.size() - offset_;
+  }
+
   uint8_t read_u8()
   {
     if (!has_bytes(1))
@@ -542,7 +557,7 @@ bool parse_area(nav_file_reader& reader, uint32_t version, uint32_t sub_version,
 {
   area.id.value = reader.read_u32();
 
-  if (version <= 8)
+  if (version <= 7)
   {
     area.base_attributes = reader.read_u8();
   }
@@ -882,11 +897,32 @@ bool navbot_mesh::load_current_map_file()
     cache_.areas.push_back(std::move(area));
   }
 
-  if (version >= 6 && !skip_ladders(reader, version))
+  const auto has_ladder_table = version >= 6 && reader.has_bytes(4);
+  if (has_ladder_table && !skip_ladders(reader, version))
   {
     navbot_log("load failed path='%s': ladder parse failed\n", cache_.nav_file_path.c_str());
     clear_nav_data();
     return false;
+  }
+
+  if (version >= 6 && !has_ladder_table)
+  {
+    if (reader.remaining() != 0)
+    {
+      navbot_log(
+        "load failed path='%s': truncated ladder header remaining=%zu offset=%zu\n",
+        cache_.nav_file_path.c_str(),
+        reader.remaining(),
+        reader.offset());
+      clear_nav_data();
+      return false;
+    }
+
+    navbot_log(
+      "load path='%s': no trailing ladder table remaining=%zu offset=%zu\n",
+      cache_.nav_file_path.c_str(),
+      reader.remaining(),
+      reader.offset());
   }
 
   if (!reader.valid() || cache_.areas.empty())
