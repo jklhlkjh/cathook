@@ -497,73 +497,12 @@ void shutdown_imgui_runtime()
     return;
   }
 
-  ImGui::SetCurrentContext(nullptr);
+  ImGui::DestroyContext();
 }
 
 void shutdown_vulkan_runtime()
 {
-  for (uint32_t index = 0; index < 8; ++index) {
-    if (g_Frames[index].Fence != VK_NULL_HANDLE && vk_device != VK_NULL_HANDLE) {
-      vkDestroyFence(vk_device, g_Frames[index].Fence, vk_allocator);
-      g_Frames[index].Fence = VK_NULL_HANDLE;
-    }
-
-    if (g_Frames[index].CommandBuffer != VK_NULL_HANDLE && g_Frames[index].CommandPool != VK_NULL_HANDLE && vk_device != VK_NULL_HANDLE) {
-      vkFreeCommandBuffers(vk_device, g_Frames[index].CommandPool, 1, &g_Frames[index].CommandBuffer);
-      g_Frames[index].CommandBuffer = VK_NULL_HANDLE;
-    }
-
-    if (g_Frames[index].CommandPool != VK_NULL_HANDLE && vk_device != VK_NULL_HANDLE) {
-      vkDestroyCommandPool(vk_device, g_Frames[index].CommandPool, vk_allocator);
-      g_Frames[index].CommandPool = VK_NULL_HANDLE;
-    }
-
-    if (g_Frames[index].BackbufferView != VK_NULL_HANDLE && vk_device != VK_NULL_HANDLE) {
-      vkDestroyImageView(vk_device, g_Frames[index].BackbufferView, vk_allocator);
-      g_Frames[index].BackbufferView = VK_NULL_HANDLE;
-    }
-
-    if (g_Frames[index].Framebuffer != VK_NULL_HANDLE && vk_device != VK_NULL_HANDLE) {
-      vkDestroyFramebuffer(vk_device, g_Frames[index].Framebuffer, vk_allocator);
-      g_Frames[index].Framebuffer = VK_NULL_HANDLE;
-    }
-
-    g_Frames[index].Backbuffer = VK_NULL_HANDLE;
-
-    if (g_FrameSemaphores[index].ImageAcquiredSemaphore != VK_NULL_HANDLE && vk_device != VK_NULL_HANDLE) {
-      vkDestroySemaphore(vk_device, g_FrameSemaphores[index].ImageAcquiredSemaphore, vk_allocator);
-      g_FrameSemaphores[index].ImageAcquiredSemaphore = VK_NULL_HANDLE;
-    }
-
-    if (g_FrameSemaphores[index].RenderCompleteSemaphore != VK_NULL_HANDLE && vk_device != VK_NULL_HANDLE) {
-      vkDestroySemaphore(vk_device, g_FrameSemaphores[index].RenderCompleteSemaphore, vk_allocator);
-      g_FrameSemaphores[index].RenderCompleteSemaphore = VK_NULL_HANDLE;
-    }
-  }
-
-  if (vk_render_pass != VK_NULL_HANDLE && vk_device != VK_NULL_HANDLE) {
-    vkDestroyRenderPass(vk_device, vk_render_pass, vk_allocator);
-    vk_render_pass = VK_NULL_HANDLE;
-  }
-
-  if (vk_descriptor_pool != VK_NULL_HANDLE && vk_device != VK_NULL_HANDLE) {
-    vkDestroyDescriptorPool(vk_device, vk_descriptor_pool, vk_allocator);
-    vk_descriptor_pool = VK_NULL_HANDLE;
-  }
-
-  queue_families.reset();
-
-  if (vk_instance != VK_NULL_HANDLE) {
-    vkDestroyInstance(vk_instance, vk_allocator);
-    vk_instance = VK_NULL_HANDLE;
-  }
-
-  vk_device = VK_NULL_HANDLE;
-  vk_physical_device = VK_NULL_HANDLE;
-  vk_pipeline_cache = VK_NULL_HANDLE;
-  vk_image_extent = {};
-  queue_family = static_cast<uint32_t>(-1);
-  count = 0;
+  shutdown_vulkan_runtime_state();
 }
 
 void shutdown_gl_runtime()
@@ -712,9 +651,9 @@ bool unload_module_runtime() {
     game_event_manager->remove_listener((IGameEventListener*)game_event_manager);
   }
 
-  shutdown_imgui_runtime();
   shutdown_vulkan_runtime();
   shutdown_gl_runtime();
+  shutdown_imgui_runtime();
 
   menu_focused = false;
   sdl_window = nullptr;
@@ -1421,11 +1360,15 @@ bool initialize_game_runtime() {
 
       const auto device_result = vkCreateDevice(vk_physical_device, &create_info2, vk_allocator, &vk_fake_device);
       error_assert(device_result != VK_SUCCESS || vk_fake_device == VK_NULL_HANDLE, "Failed to create Vulkan dummy device\n");
-      
+
+      create_device_original = (VkResult (*)(VkPhysicalDevice, const VkDeviceCreateInfo*, const VkAllocationCallbacks*, VkDevice*))vkGetInstanceProcAddr(vk_instance, "vkCreateDevice");
       queue_present_original = (VkResult (*)(VkQueue, const VkPresentInfoKHR*))vkGetDeviceProcAddr(vk_fake_device, "vkQueuePresentKHR");
       acquire_next_image_original = (VkResult (*)(VkDevice, VkSwapchainKHR, uint64_t, VkSemaphore, VkFence, uint32_t*))vkGetDeviceProcAddr(vk_fake_device, "vkAcquireNextImageKHR");
       acquire_next_image2_original = (VkResult (*)(VkDevice, const VkAcquireNextImageInfoKHR*,  uint32_t*))vkGetDeviceProcAddr(vk_fake_device, "vkAcquireNextImage2KHR");
       create_swapchain_original = (VkResult (*)(VkDevice, const VkSwapchainCreateInfoKHR*, const VkAllocationCallbacks*, VkSwapchainKHR*))vkGetDeviceProcAddr(vk_fake_device, "vkCreateSwapchainKHR");
+      destroy_swapchain_original = (void (*)(VkDevice, VkSwapchainKHR, const VkAllocationCallbacks*))vkGetDeviceProcAddr(vk_fake_device, "vkDestroySwapchainKHR");
+      get_device_queue_original = (void (*)(VkDevice, uint32_t, uint32_t, VkQueue*))vkGetDeviceProcAddr(vk_fake_device, "vkGetDeviceQueue");
+      get_device_queue2_original = (void (*)(VkDevice, const VkDeviceQueueInfo2*, VkQueue*))vkGetDeviceProcAddr(vk_fake_device, "vkGetDeviceQueue2");
 
       vkDestroyDevice(vk_fake_device, vk_allocator);
 
@@ -1441,6 +1384,24 @@ bool initialize_game_runtime() {
 
       rv = funchook_prepare(funchook, (void**)&create_swapchain_original, (void*)create_swapchain_hook);
       error_assert(rv != 0, "Failed to prepare vkCreateSwapchainKHR hook\n");
+
+      rv = funchook_prepare(funchook, (void**)&destroy_swapchain_original, (void*)destroy_swapchain_hook);
+      error_assert(rv != 0, "Failed to prepare vkDestroySwapchainKHR hook\n");
+
+      if (create_device_original != nullptr) {
+        rv = funchook_prepare(funchook, (void**)&create_device_original, (void*)create_device_hook);
+        error_assert(rv != 0, "Failed to prepare vkCreateDevice hook\n");
+      }
+
+      if (get_device_queue_original != nullptr) {
+        rv = funchook_prepare(funchook, (void**)&get_device_queue_original, (void*)get_device_queue_hook);
+        error_assert(rv != 0, "Failed to prepare vkGetDeviceQueue hook\n");
+      }
+
+      if (get_device_queue2_original != nullptr) {
+        rv = funchook_prepare(funchook, (void**)&get_device_queue2_original, (void*)get_device_queue2_hook);
+        error_assert(rv != 0, "Failed to prepare vkGetDeviceQueue2 hook\n");
+      }
 
       dlclose(lib_vulkan_handle);
     }
