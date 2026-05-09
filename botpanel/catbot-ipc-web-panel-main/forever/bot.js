@@ -745,6 +745,7 @@ class Bot extends EventEmitter {
         this.shouldRestart = false;
         this.isSteamWorking = false;
         this.time_steamWorking = 0;
+        this.time_steam_launch_started = 0;
         this.time_steam_login_timeout_started = 0;
         this.time_steamAssumeReady = 0;
         this.time_steamLoggedIn = 0;
@@ -755,6 +756,7 @@ class Bot extends EventEmitter {
         this.time_steamStatusLog = 0;
         this.shouldResetSteam = false;
         this.steamReadyLogged = false;
+        this.steam_quick_exit_count = 0;
     }
 
     log(message) {
@@ -1493,6 +1495,7 @@ class Bot extends EventEmitter {
         const xauthority_path = self.ensureVisibleXauthority();
 
         var steambin = this.steamLaunchCommand();
+        self.time_steam_launch_started = Date.now();
 
         self.procFirejailSteam = child_process.spawn(([this.shouldResetSteam, this.shouldResetSteam = 0][0] ? LAUNCH_OPTIONS_STEAM_RESET : LAUNCH_OPTIONS_STEAM)
             // Username
@@ -1677,6 +1680,7 @@ class Bot extends EventEmitter {
 
     handleSteamExit(code, signal) {
         this.log(`Steam (${this.procFirejailSteam.pid}) exited with code ${code}, signal ${signal}`);
+        const steam_runtime = this.time_steam_launch_started ? Date.now() - this.time_steam_launch_started : 0;
         const steam_log_tail = log_file_tail('./logs/' + this.name + '.steam.log', 25);
         if (steam_log_tail)
             this.log(`Steam log tail:\n${steam_log_tail}`);
@@ -1686,10 +1690,17 @@ class Bot extends EventEmitter {
             this.shouldRun = false;
             this.shouldRestart = false;
         }
+        else if (!this.isSteamWorking && !this.steamClientInitialized && code === 0 && signal === null && steam_runtime > 0 && steam_runtime < 10000) {
+            this.steam_quick_exit_count++;
+            this.log(`[ERROR] Steam exited cleanly after ${Math.ceil(steam_runtime / 1000)} seconds before login/readiness; treating it as failed startup instead of respawning immediately. quick_exit_count=${this.steam_quick_exit_count}`);
+            this.shouldRestart = true;
+            this.time_steamWorking = 0;
+        }
         this.emit('exit-steam');
 
         this.isSteamWorking = false;
         this.steamClientInitialized = false;
+        this.time_steam_launch_started = 0;
         this.time_steam_login_timeout_started = 0;
         this.time_steamLoggedIn = 0;
         this.time_steam_client_initialized_game_launch = 0;
@@ -1739,6 +1750,7 @@ class Bot extends EventEmitter {
         this.procFirejailSteam = null;
         this.isSteamWorking = false;
         this.time_steamWorking = 0;
+        this.time_steam_launch_started = 0;
         this.time_steam_login_timeout_started = 0;
         this.time_steamAssumeReady = 0;
         this.time_steamLoggedIn = 0;
@@ -1751,6 +1763,7 @@ class Bot extends EventEmitter {
         this.shouldRestart = false;
         this.steamReadyLogged = false;
         this.steamClientInitialized = false;
+        this.steam_quick_exit_count = 0;
         this.steamwebhelper_cleanup_done = false;
         this.steamwebhelper_frozen_pid = -1;
         this.gamePid = -1;
