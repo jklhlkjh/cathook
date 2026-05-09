@@ -709,6 +709,21 @@ static aimbot_candidate aimbot_find_best_scope_candidate(Player* localplayer, We
   return best_candidate;
 }
 
+static bool aimbot_hitscan_solution_ready(Player* localplayer,
+  const aimbot_candidate& candidate,
+  const Vec3& command_view_angles,
+  bool visible_steering) {
+  if (candidate.entity == nullptr) {
+    return false;
+  }
+
+  if (!visible_steering && candidate.visible) {
+    return true;
+  }
+
+  return hitscan_aim_trace_candidate(localplayer, candidate, command_view_angles);
+}
+
 static bool aimbot_projectile_solution_ready(Player* localplayer,
   Weapon* weapon,
   user_cmd* user_cmd,
@@ -893,7 +908,7 @@ bool aimbot(user_cmd* user_cmd, Vec3 original_view_angles) {
   const bool visible_steering = aimbot_mode_uses_visible_steering();
   const bool hitscan_solution = !aimbot_is_projectile_weapon(weapon) && !aimbot_is_melee_weapon(weapon);
   const bool hitscan_ready = !hitscan_solution ||
-    hitscan_aim_trace_candidate(localplayer, best_candidate, user_cmd->view_angles);
+    aimbot_hitscan_solution_ready(localplayer, best_candidate, user_cmd->view_angles, visible_steering);
   const bool melee_solution = aimbot_is_melee_weapon(weapon);
   const bool relaxed_melee_ready = relaxed_final_trace &&
     ((best_candidate.player != nullptr && best_candidate.melee_has_prediction) ||

@@ -203,7 +203,7 @@ inline unsigned int aimbot_visibility_trace_mask() {
 }
 
 inline unsigned int aimbot_hitscan_trace_mask() {
-  unsigned int trace_mask = MASK_SOLID | CONTENTS_HITBOX;
+  unsigned int trace_mask = MASK_SHOT | CONTENTS_GRATE;
   if (config.aimbot.shoot_through_glass) {
     trace_mask &= ~CONTENTS_WINDOW;
   }
@@ -281,17 +281,58 @@ inline float aimbot_calculate_fov(const Vec3& target_angles, const Vec3& source_
   return std::hypot(delta.x, delta.y);
 }
 
+inline bool aimbot_headshot_ready_for_priority(Player* localplayer, Weapon* weapon) {
+  if (localplayer == nullptr || weapon == nullptr || !weapon->is_headshot_weapon()) {
+    return false;
+  }
+
+  switch (weapon->get_weapon_id()) {
+  case TF_WEAPON_SNIPERRIFLE:
+  case TF_WEAPON_SNIPERRIFLE_DECAP:
+  case TF_WEAPON_SNIPERRIFLE_CLASSIC:
+    if (config.aimbot.wait_for_headshot) {
+      return true;
+    }
+
+    if (weapon->can_fire_critical_shot(true)) {
+      return true;
+    }
+
+    if (attribute_manager != nullptr && attribute_manager->attrib_hook_value(0, "sniper_no_headshot_without_full_charge", weapon->to_entity()) != 0) {
+      return weapon->get_charged_damage() >= 150.0f;
+    }
+
+    if (attribute_manager != nullptr && attribute_manager->attrib_hook_value(0, "sniper_crit_no_scope", weapon->to_entity()) != 0) {
+      return true;
+    }
+
+    if (!localplayer->is_scoped() || localplayer->get_fov() >= localplayer->get_default_fov()) {
+      return false;
+    }
+
+    if (aimbot_tracked_scoped_time(localplayer) >= 0.2f) {
+      return true;
+    }
+
+    {
+      const float current_time = global_vars != nullptr ? global_vars->curtime : localplayer->get_tickbase() * TICK_INTERVAL;
+      return current_time - localplayer->get_fov_time() >= 0.2f;
+    }
+  case TF_WEAPON_REVOLVER:
+    return config.aimbot.wait_for_headshot ||
+      attribute_manager == nullptr ||
+      attribute_manager->attrib_hook_value(0, "set_weapon_mode", weapon->to_entity()) != 1 ||
+      weapon->can_ambassador_headshot();
+  default:
+    return false;
+  }
+}
+
 inline int aimbot_default_bone(Player* localplayer, Player* target, Weapon* weapon) {
   if (localplayer == nullptr || target == nullptr) return 0;
 
   int bone = target->get_tf_class() == tf_class::ENGINEER ? 5 : 2;
-  if (localplayer->get_tf_class() == tf_class::SNIPER) {
-    if (weapon != nullptr && weapon->is_headshot_weapon() && config.aimbot.wait_for_headshot) {
-      bone = target->get_head_bone();
-    } else if (localplayer->is_scoped() && target->get_health() > 50) {
-      bone = target->get_head_bone();
-    }
-  } else if (localplayer->get_tf_class() == tf_class::SPY && weapon != nullptr && weapon->is_headshot_weapon()) {
+  if (aimbot_headshot_ready_for_priority(localplayer, weapon)) {
     bone = target->get_head_bone();
   }
 
@@ -331,11 +372,7 @@ inline bool aimbot_hitbox_matches_mask(int hitbox_id, uint32_t hitbox_mask) {
 inline int aimbot_hitbox_priority(Player* localplayer, Player* target, Weapon* weapon, int hitbox_id) {
   bool prefer_head = false;
   if (localplayer != nullptr && target != nullptr) {
-    if (localplayer->get_tf_class() == tf_class::SNIPER && weapon != nullptr && weapon->is_headshot_weapon()) {
-      prefer_head = config.aimbot.wait_for_headshot || (localplayer->is_scoped() && target->get_health() > 50);
-    } else if (localplayer->get_tf_class() == tf_class::SPY && weapon != nullptr && weapon->is_headshot_weapon()) {
-      prefer_head = true;
-    }
+    prefer_head = aimbot_headshot_ready_for_priority(localplayer, weapon);
   }
 
   switch (hitbox_id) {
