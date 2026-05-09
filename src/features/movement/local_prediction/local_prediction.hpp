@@ -743,12 +743,16 @@ inline bool local_prediction_simulate_player_path(Player* player,
     return false;
   }
 
+  Vec3 initial_velocity = snapshot.player.velocity;
   const bool local_player = entity_list != nullptr && player == entity_list->get_localplayer();
   if (!local_player) {
-    return false;
+    player->set_base_velocity({});
+    if (player->is_on_ground()) {
+      initial_velocity.z = std::min(initial_velocity.z, 0.0f);
+    } else {
+      player->set_ground_entity_handle(-1);
+    }
   }
-
-  Vec3 initial_velocity = snapshot.player.velocity;
 
   movement_sim_active = true;
   *path_out = {};

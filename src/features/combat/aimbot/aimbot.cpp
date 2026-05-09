@@ -140,6 +140,85 @@ bool aimbot_projectile_has_pipe_random_velocity(Weapon* weapon)
   }
 }
 
+bool aimbot_projectile_is_charge_weapon(Weapon* weapon)
+{
+  if (weapon == nullptr) {
+    return false;
+  }
+
+  switch (weapon->get_weapon_id()) {
+  case TF_WEAPON_COMPOUND_BOW:
+  case TF_WEAPON_PIPEBOMBLAUNCHER:
+  case TF_WEAPON_CANNON:
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool aimbot_projectile_charge_started(Weapon* weapon)
+{
+  if (weapon == nullptr) {
+    return false;
+  }
+
+  switch (weapon->get_weapon_id()) {
+  case TF_WEAPON_COMPOUND_BOW:
+  case TF_WEAPON_PIPEBOMBLAUNCHER:
+    return weapon->get_charge_begin_time() > 0.0f;
+  case TF_WEAPON_CANNON:
+    return weapon->get_detonate_time() > 0.0f;
+  default:
+    return false;
+  }
+}
+
+bool aimbot_weapon_can_attack_or_release_projectile(Player* localplayer, Weapon* weapon)
+{
+  if (localplayer == nullptr || weapon == nullptr) {
+    return false;
+  }
+
+  if (weapon->can_primary_attack()) {
+    return true;
+  }
+
+  return aimbot_is_projectile_weapon(weapon) &&
+    aimbot_projectile_is_charge_weapon(weapon) &&
+    aimbot_projectile_charge_started(weapon);
+}
+
+bool aimbot_apply_projectile_auto_shoot(user_cmd* user_cmd, Weapon* weapon, bool projectile_solution)
+{
+  if (user_cmd == nullptr || weapon == nullptr) {
+    return false;
+  }
+
+  if (!projectile_solution || !aimbot_projectile_is_charge_weapon(weapon)) {
+    user_cmd->buttons |= IN_ATTACK;
+    return true;
+  }
+
+  if (aimbot_projectile_charge_started(weapon)) {
+    user_cmd->buttons &= ~IN_ATTACK;
+    return true;
+  }
+
+  user_cmd->buttons |= IN_ATTACK;
+  return true;
+}
+
+void aimbot_hold_projectile_charge_if_needed(user_cmd* user_cmd, Weapon* weapon)
+{
+  if (user_cmd == nullptr || weapon == nullptr || !config.aimbot.auto_shoot) {
+    return;
+  }
+
+  if (aimbot_projectile_is_charge_weapon(weapon) && aimbot_projectile_charge_started(weapon)) {
+    user_cmd->buttons |= IN_ATTACK;
+  }
+}
+
 Vec3 aimbot_projectile_random_angle_offset(Player* localplayer,
   Weapon* weapon,
   user_cmd* user_cmd,
@@ -741,6 +820,7 @@ bool aimbot(user_cmd* user_cmd, Vec3 original_view_angles) {
   }
 
   if (best_candidate.entity == nullptr) {
+    aimbot_hold_projectile_charge_if_needed(user_cmd, weapon);
     store_aimbot_input_angles(source_view_angles);
     return false;
   }
@@ -758,7 +838,8 @@ bool aimbot(user_cmd* user_cmd, Vec3 original_view_angles) {
 
   aimbot_request_walk_to_target(localplayer, weapon, best_candidate);
 
-  if (!weapon->can_primary_attack() || !aimbot_scoped_only_ready(localplayer, weapon)) {
+  if (!aimbot_weapon_can_attack_or_release_projectile(localplayer, weapon) || !aimbot_scoped_only_ready(localplayer, weapon)) {
+    aimbot_hold_projectile_charge_if_needed(user_cmd, weapon);
     store_aimbot_input_angles(source_view_angles);
     return false;
   }
@@ -828,12 +909,19 @@ bool aimbot(user_cmd* user_cmd, Vec3 original_view_angles) {
     melee_ready &&
     headshot_ready &&
     !(user_cmd->buttons & IN_ATTACK2);
+  if (projectile_solution && !attack_ready) {
+    aimbot_hold_projectile_charge_if_needed(user_cmd, weapon);
+  }
   if (config.aimbot.auto_shoot && attack_ready) {
-    user_cmd->buttons |= IN_ATTACK;
-    g_aimbot_requested_shot = true;
+    g_aimbot_requested_shot = aimbot_apply_projectile_auto_shoot(user_cmd, weapon, projectile_solution);
   }
 
-  if (attack_ready && (user_cmd->buttons & IN_ATTACK) && projectile_solution) {
+  const bool projectile_charge_release =
+    projectile_solution &&
+    aimbot_projectile_is_charge_weapon(weapon) &&
+    aimbot_projectile_charge_started(weapon) &&
+    (user_cmd->buttons & IN_ATTACK) == 0;
+  if (attack_ready && ((user_cmd->buttons & IN_ATTACK) != 0 || projectile_charge_release) && projectile_solution) {
     user_cmd->view_angles = projectile_view_angles;
   }
 
