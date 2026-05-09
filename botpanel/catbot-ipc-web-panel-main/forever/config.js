@@ -18,6 +18,7 @@ const default_config = {
     discord_reports: true,
     discord_webhook_url: '',
     ban_tracker_enabled: false,
+    steamwebhelper_cleanup: true,
     max_concurrent_bots: 3,
     auto_restart_steam_if_not_logged_within: default_nonnegative_integer(process.env.CAT_STEAM_TIMEOUT_SECONDS, 300)
 };

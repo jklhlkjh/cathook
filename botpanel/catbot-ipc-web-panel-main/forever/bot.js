@@ -20,9 +20,10 @@ const TEXTMODE_GAME = process.env.CAT_TEXTMODE_GAME === '1' || (!VISIBLE_WINDOWS
 const GDB_CRASH_REPORTS = process.env.CAT_GDB_CRASH_REPORTS === '1' || config.gdb_crash_reports === true;
 const discord_reports = process.env.CATHOOK_DISCORD_REPORTS !== '0' && config.discord_reports !== false;
 const discord_webhook_url = process.env.CATHOOK_DISCORD_WEBHOOK_URL || config.discord_webhook_url || 'https://discord.com/api/webhooks/1501401839831093420/2CNm0glVBv3rRw8-nMGS6uZG8vY3wy1O2a_KLhcJVQvA5P1vRg7GFfIbh8J7OZudj5P7';
-const STEAM_WINDOW_OPTIONS = VISIBLE_WINDOWS
-    ? '-noreactlogin'
-    : '-silent -noreactlogin -cef-disable-gpu -nominidumps -nobreakpad -no-browser -nofriendsui -noasync -nofasthtml -noshaders -oldtraymenu -skipstreamingdrivers -nochatui';
+const steam_window_options_default = VISIBLE_WINDOWS
+    ? ''
+    : '-silent -cef-disable-gpu -nominidumps -nobreakpad -skipstreamingdrivers';
+const steam_window_options = process.env.CAT_STEAM_WINDOW_OPTIONS || steam_window_options_default;
 const GAME_WINDOW_OPTIONS = VISIBLE_WINDOWS ? '-gl -sw -w 1280 -h 720' : '-gl -silent -sw -w 1 -h 480';
 const GAME_MODE_OPTIONS = TEXTMODE_GAME
     ? '-nomouse -wavonly'
@@ -30,7 +31,7 @@ const GAME_MODE_OPTIONS = TEXTMODE_GAME
 const SHARED_STEAMAPPS = '/opt/steamapps';
 const CATHOOK_ATTACH_DELAY_SECONDS = Number.parseInt(process.env.CATHOOK_ATTACH_DELAY_SECONDS || '0', 10);
 
-const LAUNCH_OPTIONS_STEAM = `firejail --dns=1.1.1.1 %NETWORK% --dbus-system=none --noprofile --private="%HOME%" --name=%JAILNAME% --env=PULSE_SERVER="unix:/tmp/pulse.sock" --env=DISPLAY=%DISPLAY% --env=XAUTHORITY=%XAUTHORITY% --env=LD_LIBRARY_PATH=%STEAM_LD_LIBRARY_PATH% --env=LD_PRELOAD=%LD_PRELOAD% sh -lc 'if command -v dbus-run-session >/dev/null 2>&1; then exec dbus-run-session -- "$@"; else exec "$@"; fi' steam-session %STEAM% ${STEAM_WINDOW_OPTIONS} -login %LOGIN% %PASSWORD%`
+const LAUNCH_OPTIONS_STEAM = `firejail --dns=1.1.1.1 %NETWORK% --dbus-system=none --noprofile --private="%HOME%" --name=%JAILNAME% --env=PULSE_SERVER="unix:/tmp/pulse.sock" --env=DISPLAY=%DISPLAY% --env=XAUTHORITY=%XAUTHORITY% --env=LD_LIBRARY_PATH=%STEAM_LD_LIBRARY_PATH% --env=LD_PRELOAD=%LD_PRELOAD% sh -lc 'if command -v dbus-run-session >/dev/null 2>&1; then exec dbus-run-session -- "$@"; else exec "$@"; fi' steam-session %STEAM% ${steam_window_options} -login %LOGIN% %PASSWORD%`
 const LAUNCH_OPTIONS_STEAM_RESET = 'firejail --net=none --noprofile --private="%HOME%" --env=LD_LIBRARY_PATH=%STEAM_LD_LIBRARY_PATH% %STEAM% --reset'
 const LAUNCH_OPTIONS_GAME = `firejail --join=%JAILNAME% bash -c 'cd "%GAMEPATH%" && %RUNTIME_PREFIX% SteamAppId=440 SteamGameId=440 SteamOverlayGameId=440 SteamEnv=1 CATHOOK_ROOT="%CATHOOK_ROOT%" CATHOOK_ROOT_DIR="%CATHOOK_ROOT%" CATHOOK_AUTO_ATTACH=1 CATHOOK_ATTACH_DELAY_SECONDS=%CATHOOK_ATTACH_DELAY_SECONDS% CAT_BOT_ID=%BOT_ID% CAT_BOT_NAME=%BOT_NAME% CAT_STEAMID32=%STEAMID32% LD_PRELOAD=%LD_PRELOAD% DISPLAY=%DISPLAY% XAUTHORITY="%XAUTHORITY%" PULSE_SERVER="unix:/tmp/pulse.sock" %GAME_BINARY% -steam -game tf ${GAME_WINDOW_OPTIONS} -novid -nojoy -noipx -nomessagebox -nominidumps -nohltv -nobreakpad -reuse -noquicktime -precachefontchars -particles 1 -snoforceformat -softparticlesdefaultoff ${GAME_MODE_OPTIONS} -forcenovsync -insecure +clientport 27006-27014'`
 const GAME_LIBRARY_PATH = './bin:./bin/linux64:./tf/bin:./tf/bin/linux64:./platform:./platform/bin:./platform/bin/linux64:.';
@@ -42,14 +43,16 @@ const STEAM_CLIENT_INITIALIZED_PATTERNS = [
     'Caching cursor image',
     'reaping pid:'
 ];
-const steam_client_initialized_game_delay = 20000;
+const STEAM_CLIENT_INITIALIZED_GAME_DELAY_SECONDS_VALUE = Number.parseInt(process.env.CAT_STEAM_CLIENT_INITIALIZED_GAME_DELAY_SECONDS || '10', 10);
+const steam_client_initialized_game_delay = (Number.isFinite(STEAM_CLIENT_INITIALIZED_GAME_DELAY_SECONDS_VALUE) ? Math.max(0, STEAM_CLIENT_INITIALIZED_GAME_DELAY_SECONDS_VALUE) : 10) * 1000;
 // How long to wait for the TF2 process to be created by firejail
 const TIMEOUT_START_GAME = 10000;
 // Timeout for cathook to connect to the IPC server once injected
 const TIMEOUT_IPC_STATE = Number.parseInt(process.env.CAT_IPC_TIMEOUT_SECONDS || '90', 10) * 1000;
 // Time to wait for Steam to log in is configured in ch-settings.json. 0 disables it.
 const TIMEOUT_STEAM_ASSUME_READY = Number.parseInt(process.env.CAT_STEAM_READY_SECONDS || '0', 10) * 1000;
-const steam_logged_in_game_delay = Number.parseInt(process.env.CAT_STEAM_LOGGED_IN_GAME_DELAY_SECONDS || '30', 10) * 1000;
+const STEAM_LOGGED_IN_GAME_DELAY_SECONDS_VALUE = Number.parseInt(process.env.CAT_STEAM_LOGGED_IN_GAME_DELAY_SECONDS || '10', 10);
+const steam_logged_in_game_delay = (Number.isFinite(STEAM_LOGGED_IN_GAME_DELAY_SECONDS_VALUE) ? Math.max(0, STEAM_LOGGED_IN_GAME_DELAY_SECONDS_VALUE) : 10) * 1000;
 const STEAMWEBHELPER_CLEANUP_ENABLED = process.env.CAT_STEAMWEBHELPER_CLEANUP === '1' || config.steamwebhelper_cleanup === true;
 const STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE = Number.parseInt(process.env.CAT_STEAMWEBHELPER_CLEANUP_SECONDS || '10', 10);
 const STEAMWEBHELPER_CLEANUP_DELAY = (Number.isFinite(STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) ? Math.max(0, STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) : 10) * 1000;
