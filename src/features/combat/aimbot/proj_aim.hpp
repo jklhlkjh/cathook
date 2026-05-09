@@ -125,6 +125,10 @@ struct proj_aim_path_sample {
   Vec3 position{};
 };
 
+struct proj_aim_splash_point {
+  Vec3 point{};
+};
+
 struct projectile_timing_context {
   float interp_time = 0.0f;
   float outgoing_latency = 0.0f;
@@ -552,13 +556,26 @@ inline bool proj_aim_trace_between(const Vec3& start, const Vec3& end, Entity* s
     return false;
   }
 
-  ray_t ray = engine_trace->init_ray(const_cast<Vec3*>(&start), const_cast<Vec3*>(&end));
-  trace_filter filter{};
-  engine_trace->init_trace_filter(&filter, skip_entity);
+  const auto trace_clear = [&](const Vec3& trace_start) {
+    ray_t ray = engine_trace->init_ray(const_cast<Vec3*>(&trace_start), const_cast<Vec3*>(&end));
+    trace_filter filter{};
+    engine_trace->init_trace_filter(&filter, skip_entity);
 
-  trace_t trace{};
-  engine_trace->trace_ray(&ray, MASK_SOLID | CONTENTS_GRATE, &filter, &trace);
-  return trace.entity == target_entity || trace.fraction > 0.97f;
+    trace_t trace{};
+    engine_trace->trace_ray(&ray, MASK_SOLID | CONTENTS_GRATE, &filter, &trace);
+    return trace.entity == target_entity || (!trace.all_solid && !trace.start_solid && trace.fraction > 0.97f);
+  };
+
+  if (trace_clear(start)) {
+    return true;
+  }
+
+  const Vec3 to_target = local_prediction_normalize(end - start);
+  if (local_prediction_vec3_is_zero(to_target)) {
+    return false;
+  }
+
+  return trace_clear(start + (to_target * 2.0f));
 }
 
 inline std::vector<proj_aim_hitbox_sample> proj_aim_hitbox_samples(Player* target, uint32_t hitbox_mask) {
@@ -1016,6 +1033,136 @@ inline std::vector<Vec3> proj_aim_splash_sample_offsets(const Vec3& local_origin
   return offsets;
 }
 
+inline bool proj_aim_splash_point_exists(const std::vector<proj_aim_splash_point>& points, const Vec3& point) {
+  constexpr float duplicate_distance_sqr = 9.0f;
+  for (const proj_aim_splash_point& existing : points) {
+    if (aimbot_distance_squared(existing.point, point) <= duplicate_distance_sqr) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+inline void proj_aim_add_splash_point(std::vector<proj_aim_splash_point>* points, const Vec3& point) {
+  if (points == nullptr || !aimbot_vec3_is_finite(point) || proj_aim_splash_point_exists(*points, point)) {
+    return;
+  }
+
+  points->push_back({
+    .point = point
+  });
+}
+
+inline bool proj_aim_trace_splash_surface(const Vec3& local_origin,
+  const Vec3& trace_start,
+  const Vec3& trace_end,
+  const Vec3& hull,
+  Vec3* point_out) {
+  if (engine_trace == nullptr || point_out == nullptr) {
+    return false;
+  }
+
+  Vec3 hull_mins = hull * -1.0f;
+  Vec3 hull_maxs = hull;
+  ray_t ray = engine_trace->init_ray(
+    const_cast<Vec3*>(&trace_start),
+    const_cast<Vec3*>(&trace_end),
+    &hull_mins,
+    &hull_maxs);
+  trace_filter filter{};
+  engine_trace->init_world_trace_filter(&filter);
+
+  trace_t trace{};
+  engine_trace->trace_ray(&ray, MASK_SOLID_BRUSHONLY, &filter, &trace);
+  if (trace.all_solid || trace.start_solid || trace.fraction >= 0.995f) {
+    return false;
+  }
+
+  const Vec3 to_local = local_prediction_normalize(local_origin - trace.endpos);
+  if (!local_prediction_vec3_is_zero(to_local)) {
+    const float normal_dot =
+      (to_local.x * trace.plane.normal.x) +
+      (to_local.y * trace.plane.normal.y) +
+      (to_local.z * trace.plane.normal.z);
+    if (normal_dot < -0.05f) {
+      return false;
+    }
+  }
+
+  *point_out = trace.endpos;
+  return true;
+}
+
+inline void proj_aim_splash_sample_points(Player* player,
+  const proj_aim_weapon_profile& profile,
+  const Vec3& local_origin,
+  const Vec3& predicted_origin,
+  int sample_count,
+  bool allow_wall_splash,
+  bool allow_seam_shot,
+  std::vector<Vec3>* offsets,
+  std::vector<proj_aim_splash_point>* points) {
+  if (points != nullptr) {
+    points->clear();
+  }
+  if (player == nullptr || offsets == nullptr || points == nullptr || profile.splash_radius <= 0.0f) {
+    return;
+  }
+
+  const Vec3 mins = player->get_player_mins(player->is_ducking());
+  const Vec3 maxs = player->get_player_maxs(player->is_ducking());
+  const Vec3 bounds_center = (mins + maxs) * 0.5f;
+  const Vec3 bounds_extent = (maxs - mins) * 0.5f;
+  const Vec3 target_center = predicted_origin + bounds_center;
+  const Vec3 target_eye = predicted_origin + player->get_view_offset();
+  const float bounds_radius = local_prediction_vector_length(bounds_extent);
+  const float surface_probe_radius = profile.splash_radius + bounds_radius;
+  const int max_samples = std::clamp(sample_count, 4, 64);
+  const int surface_samples = std::clamp((max_samples + 1) / 2, 4, 24);
+
+  proj_aim_splash_sample_offsets(
+    local_origin,
+    predicted_origin,
+    surface_probe_radius,
+    surface_samples,
+    allow_wall_splash,
+    allow_seam_shot,
+    offsets);
+
+  points->reserve((offsets->size() * 2) + static_cast<size_t>(max_samples));
+
+  constexpr float surface_probe_hull = 1.0f;
+  const Vec3 trace_hull{surface_probe_hull, surface_probe_hull, surface_probe_hull};
+
+  for (const Vec3& offset : *offsets) {
+    const Vec3 probe = target_center + offset;
+    Vec3 surface_point{};
+    if (proj_aim_trace_splash_surface(local_origin, target_eye, probe, trace_hull, &surface_point) &&
+        distance_3d(surface_point, target_center) <= surface_probe_radius + 2.0f) {
+      proj_aim_add_splash_point(points, surface_point);
+    }
+
+    if (proj_aim_trace_splash_surface(local_origin, target_center, probe, trace_hull, &surface_point) &&
+        distance_3d(surface_point, target_center) <= surface_probe_radius + 2.0f) {
+      proj_aim_add_splash_point(points, surface_point);
+    }
+  }
+
+  proj_aim_splash_sample_offsets(
+    local_origin,
+    predicted_origin,
+    profile.splash_radius,
+    max_samples,
+    allow_wall_splash,
+    allow_seam_shot,
+    offsets);
+
+  for (const Vec3& offset : *offsets) {
+    proj_aim_add_splash_point(points, predicted_origin + offset);
+  }
+}
+
 inline bool proj_aim_direct_candidate_confident(const proj_aim_weapon_profile& profile, const aimbot_candidate& candidate) {
   if (candidate.player == nullptr || !candidate.projectile_direct) {
     return false;
@@ -1048,8 +1195,15 @@ inline aimbot_candidate proj_aim_find_splash_candidate(Player* localplayer,
   const std::vector<proj_aim_path_sample> predicted_samples = proj_aim_limited_path_samples(target_path);
   const int splash_samples = std::clamp(config.aimbot.projectile_splash_samples, 4, 64);
   const std::vector<proj_aim_hitbox_sample> hitbox_samples = proj_aim_hitbox_samples(player, hitbox_mask);
+  const int splash_solve_budget = std::clamp(
+    static_cast<int>(predicted_samples.size()) * splash_samples,
+    24,
+    config.aimbot.projectile_splash_debug ? 768 : 384);
+  int splash_solves = 0;
   std::vector<Vec3> sample_offsets{};
-  sample_offsets.reserve(static_cast<size_t>(splash_samples) + 6);
+  sample_offsets.reserve((static_cast<size_t>(splash_samples) + 6) * 2);
+  std::vector<proj_aim_splash_point> splash_points{};
+  splash_points.reserve((static_cast<size_t>(splash_samples) + 6) * 2);
   std::vector<proj_aim_splash_history> splash_history{};
   if (config.aimbot.projectile_splash_debug) {
     splash_history.reserve(predicted_samples.size() * static_cast<size_t>(std::min(splash_samples, 12)));
@@ -1057,6 +1211,10 @@ inline aimbot_candidate proj_aim_find_splash_candidate(Player* localplayer,
   }
 
   for (const proj_aim_path_sample& predicted_sample : predicted_samples) {
+    if (splash_solves >= splash_solve_budget) {
+      break;
+    }
+
     const Vec3& predicted_origin = predicted_sample.position;
     const Vec3 predicted_angles = aimbot_calculate_angles_to_position(local_origin, predicted_origin);
     const float predicted_fov = aimbot_calculate_fov(predicted_angles, original_view_angles);
@@ -1064,23 +1222,31 @@ inline aimbot_candidate proj_aim_find_splash_candidate(Player* localplayer,
       continue;
     }
 
-    proj_aim_splash_sample_offsets(
+    proj_aim_splash_sample_points(
+      player,
+      profile,
       local_origin,
       predicted_origin,
-      splash_radius,
       splash_samples,
       config.aimbot.projectile_wall_splash,
       config.aimbot.projectile_seam_shot,
-      &sample_offsets);
+      &sample_offsets,
+      &splash_points);
     if (config.aimbot.projectile_splash_debug) {
-      proj_aim_current_debug_stats.splash_offsets += static_cast<int>(sample_offsets.size());
+      proj_aim_current_debug_stats.splash_offsets += static_cast<int>(splash_points.size());
     }
 
-    for (const Vec3& offset : sample_offsets) {
-      const Vec3 splash_point = predicted_origin + offset;
+    for (const proj_aim_splash_point& sample_point : splash_points) {
+      if (splash_solves >= splash_solve_budget) {
+        break;
+      }
+
+      const Vec3& splash_point = sample_point.point;
       if (config.aimbot.projectile_splash_debug) {
         ++proj_aim_current_debug_stats.splash_solves;
       }
+      ++splash_solves;
+
       const LocalPredictionInterceptResult intercept = local_prediction_find_projectile_intercept(
         localplayer,
         weapon,
