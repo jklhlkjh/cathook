@@ -21,8 +21,8 @@ const GDB_CRASH_REPORTS = process.env.CAT_GDB_CRASH_REPORTS === '1' || config.gd
 const discord_reports = process.env.CATHOOK_DISCORD_REPORTS !== '0' && config.discord_reports !== false;
 const discord_webhook_url = process.env.CATHOOK_DISCORD_WEBHOOK_URL || config.discord_webhook_url || 'https://discord.com/api/webhooks/1501401839831093420/2CNm0glVBv3rRw8-nMGS6uZG8vY3wy1O2a_KLhcJVQvA5P1vRg7GFfIbh8J7OZudj5P7';
 const steam_window_options_default = VISIBLE_WINDOWS
-    ? ''
-    : '-silent -cef-disable-gpu -nominidumps -nobreakpad -skipstreamingdrivers';
+    ? '-noreactlogin'
+    : '-silent -noreactlogin -cef-disable-gpu -nominidumps -nobreakpad -skipstreamingdrivers';
 const steam_window_options = process.env.CAT_STEAM_WINDOW_OPTIONS || steam_window_options_default;
 const GAME_WINDOW_OPTIONS = VISIBLE_WINDOWS ? '-gl -sw -w 1280 -h 720' : '-gl -silent -sw -w 1 -h 480';
 const GAME_MODE_OPTIONS = TEXTMODE_GAME
@@ -156,6 +156,12 @@ function steam_startup_log_has_fatal_error(text) {
 function steam_webhelper_browser_stalled(text) {
     if (text.includes('Timed out waiting for webhelper init'))
         return true;
+
+    if (!text.includes('CreateResponse') && !text.includes('BrowserReady')) {
+        const restart_count = (text.match(/Restart webhelper process/g) || []).length;
+        if (restart_count >= 2)
+            return true;
+    }
 
     const create_browser_position = text.lastIndexOf('CreateBrowser');
     if (create_browser_position < 0)
