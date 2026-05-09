@@ -56,6 +56,8 @@ const steam_logged_in_game_delay = (Number.isFinite(STEAM_LOGGED_IN_GAME_DELAY_S
 const STEAMWEBHELPER_CLEANUP_ENABLED = process.env.CAT_STEAMWEBHELPER_CLEANUP === '1' || config.steamwebhelper_cleanup === true;
 const STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE = Number.parseInt(process.env.CAT_STEAMWEBHELPER_CLEANUP_SECONDS || '10', 10);
 const STEAMWEBHELPER_CLEANUP_DELAY = (Number.isFinite(STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) ? Math.max(0, STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) : 10) * 1000;
+const STEAM_LOGIN_UI_TIMEOUT_SECONDS_VALUE = Number.parseInt(process.env.CAT_STEAM_LOGIN_UI_TIMEOUT_SECONDS || '75', 10);
+const STEAM_LOGIN_UI_TIMEOUT = (Number.isFinite(STEAM_LOGIN_UI_TIMEOUT_SECONDS_VALUE) ? Math.max(0, STEAM_LOGIN_UI_TIMEOUT_SECONDS_VALUE) : 75) * 1000;
 // Time to delay individual bot starts by to prevent IPC ID conflicts
 const BOT_START_DELAY_SECONDS_VALUE = Number.parseInt(process.env.CAT_BOT_START_DELAY_SECONDS || '30', 10);
 const DELAY_START_TIME = (Number.isFinite(BOT_START_DELAY_SECONDS_VALUE) ? Math.max(1, BOT_START_DELAY_SECONDS_VALUE) : 30) * 1000;
@@ -1293,7 +1295,7 @@ class Bot extends EventEmitter {
 
     steam_webhelper_stall_log_path() {
         for (var log_path of this.existingSteamLogPaths()) {
-            if (path.basename(log_path) !== 'steamui_html.txt')
+            if (!['steamui_html.txt', 'webhelper.txt'].includes(path.basename(log_path)))
                 continue;
 
             try {
@@ -1304,6 +1306,23 @@ class Bot extends EventEmitter {
         }
 
         return null;
+    }
+
+    steam_login_ui_stall_log_path(time) {
+        if (!STEAM_LOGIN_UI_TIMEOUT || !this.time_steam_login_timeout_started)
+            return null;
+
+        if (time < this.time_steam_login_timeout_started + STEAM_LOGIN_UI_TIMEOUT)
+            return null;
+
+        const log_paths = this.existingSteamLogPaths();
+        if (log_paths.some((log_path) => path.basename(log_path) === 'steamui_login.txt'))
+            return null;
+
+        return log_paths.find((log_path) => path.basename(log_path) === 'webhelper.txt')
+            || log_paths.find((log_path) => path.basename(log_path) === 'steamui_system.txt')
+            || log_paths.find((log_path) => path.basename(log_path) === 'bootstrap_log.txt')
+            || null;
     }
 
     markSteamReady(preferredSteamPath) {
@@ -2068,6 +2087,15 @@ class Bot extends EventEmitter {
                     if (stalled_webhelper_log_path) {
                         this.log(`[ERROR] Steam webhelper browser startup stalled in ${stalled_webhelper_log_path}; restarting Steam with a fresh webhelper cache.`);
                         this.logSteamTails('Steam webhelper stall log tail', 12);
+                        this.shouldRestart = true;
+                        this.time_steamWorking = 0;
+                        return;
+                    }
+
+                    const stalled_login_ui_log_path = this.steam_login_ui_stall_log_path(time);
+                    if (stalled_login_ui_log_path) {
+                        this.log(`[ERROR] Steam login UI did not appear within ${STEAM_LOGIN_UI_TIMEOUT / 1000} seconds; restarting Steam with a fresh webhelper cache. last_log=${stalled_login_ui_log_path}`);
+                        this.logSteamTails('Steam login UI stall log tail', 12);
                         this.shouldRestart = true;
                         this.time_steamWorking = 0;
                         return;
