@@ -10,7 +10,7 @@
 
 ## Risk of Manual Ban
 
-Doesnt matter what cheat you use, get ready for a gameban.
+Doesnt matter what cheat you use, get ready for a gameban or account removal.
 
 ## Overview
 
