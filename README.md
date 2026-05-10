@@ -6,6 +6,10 @@
   Cathook is a Team Fortress 2 Linux internal DLC.
 </p>
 
+# BETA WARNING
+
+This project is currently in beta. Some features may be broken, unfinished, unstable, or may not work at all. Expect bugs, crashes, missing behavior, and issues.
+
 ##
 
 ## Risk of Manual Ban

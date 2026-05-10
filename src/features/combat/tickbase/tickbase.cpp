@@ -17,6 +17,7 @@ V  o o  V  file: src/features/combat/tickbase/tickbase.cpp
 
 #include "core/hooks/cl_read_packets.hpp"
 #include "features/combat/anti_aim/anti_aim.hpp"
+#include "features/combat/aimbot/aimbot.hpp"
 #include "features/menu/config.hpp"
 #include "games/tf2/sdk/interfaces/client_state.hpp"
 #include "games/tf2/sdk/interfaces/convar_system.hpp"
@@ -113,18 +114,16 @@ auto max_processing_ticks() -> int
   return std::clamp(server_limit, 1, 24);
 }
 
-auto tickbase_enabled() -> bool
+auto packet_rebuild_enabled() -> bool
 {
   return config.misc.exploits.tickbase
       || config.misc.exploits.fakelag
-      || config.misc.exploits.anti_aim
-      || config.misc.exploits.network_fix;
+      || config.misc.exploits.anti_aim;
 }
 
-auto can_rebuild() -> bool
+auto rebuild_dependencies_ready() -> bool
 {
-  return tickbase_enabled()
-      && client != nullptr
+  return client != nullptr
       && client_state != nullptr
       && client_state->m_NetChannel != nullptr
       && global_vars != nullptr
@@ -134,6 +133,11 @@ auto can_rebuild() -> bool
       && g_state.host_frametime_unbounded != nullptr
       && g_state.host_frametime_std_deviation != nullptr
       && g_state.host_should_run != nullptr;
+}
+
+auto can_rebuild_packets() -> bool
+{
+  return packet_rebuild_enabled() && rebuild_dependencies_ready();
 }
 
 auto latest_command_number() -> int
@@ -244,13 +248,13 @@ void prune_prediction_fixes()
   }
 }
 
-void account_generated_command(bool force_send)
+void spend_shift_tick()
 {
-  if (force_send) {
-    g_state.processing_ticks = std::max(0, g_state.processing_ticks - 1);
-    return;
-  }
+  g_state.processing_ticks = std::max(0, g_state.processing_ticks - 1);
+}
 
+void recharge_shift_tick()
+{
   g_state.processing_ticks = std::min(max_processing_ticks(), g_state.processing_ticks + 1);
 }
 
@@ -277,7 +281,7 @@ void set_choked_command()
   ++client_state->chokedcommands;
 }
 
-auto send_move(bool account_processing_ticks) -> bool
+auto send_move() -> bool
 {
   auto* channel = client_state != nullptr ? client_state->m_NetChannel : nullptr;
   if (channel == nullptr || client == nullptr) {
@@ -318,10 +322,6 @@ auto send_move(bool account_processing_ticks) -> bool
 
   if (!channel->send_net_msg(message, false, false)) {
     return false;
-  }
-
-  if (account_processing_ticks) {
-    g_state.processing_ticks = std::max(0, g_state.processing_ticks - message.new_commands);
   }
 
   return true;
@@ -368,7 +368,7 @@ void apply_fakelag(user_cmd* cmd)
     return;
   }
 
-  if (is_attack_command(cmd)) {
+  if (is_attack_command(cmd) || aimbot_has_active_target()) {
     g_state.send_packet = true;
     return;
   }
@@ -403,7 +403,7 @@ void apply_anti_aim_choke(user_cmd* cmd)
     return;
   }
 
-  if (anti_aim::should_preserve_shot(cmd)) {
+  if (anti_aim::should_preserve_shot(cmd) || aimbot_has_active_target()) {
     g_state.send_packet = true;
     return;
   }
@@ -493,7 +493,7 @@ void update_shift_state(user_cmd* cmd)
 
 auto run_rebuilt_move(float accumulated_extra_samples, bool final_tick, bool force_send) -> bool
 {
-  if (!can_rebuild()) {
+  if (!can_rebuild_packets()) {
     return false;
   }
 
@@ -515,15 +515,19 @@ auto run_rebuilt_move(float accumulated_extra_samples, bool final_tick, bool for
   const bool should_gate_packet = !force_send
       && (!channel->is_loopback())
       && ((*g_state.net_time < client_state->m_flNextCmdTime) || !channel->can_packet() || !final_tick);
+  const bool packet_gate_open = !should_gate_packet;
 
   if (should_gate_packet) {
     g_state.send_packet = false;
   }
 
   if (client_state->m_nSignonState == signon_state_full) {
-    account_generated_command(force_send);
+    if (force_send) {
+      spend_shift_tick();
+    }
 
     if (!force_send && should_recharge() && client_state->chokedcommands == 0) {
+      recharge_shift_tick();
       g_state.recharging = true;
       g_state.send_packet = false;
       return true;
@@ -534,6 +538,10 @@ auto run_rebuilt_move(float accumulated_extra_samples, bool final_tick, bool for
     const int next_command = latest_command_number();
     client->create_move(next_command, interval_per_tick() - accumulated_extra_samples, true);
 
+    if (!packet_gate_open) {
+      g_state.send_packet = false;
+    }
+
     if (force_send) {
       g_state.send_packet = final_tick;
     }
@@ -543,7 +551,7 @@ auto run_rebuilt_move(float accumulated_extra_samples, bool final_tick, bool for
     }
 
     if (g_state.send_packet) {
-      send_move(!force_send);
+      send_move();
     } else {
       set_choked_command();
     }
@@ -634,6 +642,7 @@ void move(float accumulated_extra_samples, bool final_tick, cl_move_fn original)
 {
   if (!should_rebuild_cl_move()) {
     if (original != nullptr) {
+      run_network_fix_before_move(final_tick);
       original(accumulated_extra_samples, final_tick);
     }
     return;
@@ -651,7 +660,7 @@ void move(float accumulated_extra_samples, bool final_tick, cl_move_fn original)
 
 void on_create_move(user_cmd* cmd)
 {
-  if (cmd == nullptr || !can_rebuild()) {
+  if (cmd == nullptr || !can_rebuild_packets()) {
     return;
   }
 
@@ -683,7 +692,7 @@ void apply_prediction_fix(int command_number, user_cmd* cmd, Player* player, flo
 
 auto should_rebuild_cl_move() -> bool
 {
-  return can_rebuild();
+  return can_rebuild_packets();
 }
 
 auto should_send_packet() -> bool

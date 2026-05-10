@@ -22,6 +22,7 @@ inline static bool autoscope_cached_scoped = false;
 inline static float autoscope_next_scope_check_time = 0.0f;
 inline static Vec3 aimbot_last_input_angles{};
 inline static bool aimbot_last_input_angles_valid = false;
+inline static bool aimbot_active_target = false;
 
 struct AimbotPreference {
   Player* preferred_target = nullptr;
@@ -53,11 +54,24 @@ inline void reset_autoscope_scope_state() {
 inline void reset_aimbot_input_history() {
   aimbot_last_input_angles = {};
   aimbot_last_input_angles_valid = false;
+  aimbot_active_target = false;
 }
 
 inline void store_aimbot_input_angles(const Vec3& view_angles) {
   aimbot_last_input_angles = view_angles;
   aimbot_last_input_angles_valid = true;
+}
+
+inline void set_aimbot_active_target() {
+  aimbot_active_target = true;
+}
+
+inline void clear_aimbot_active_target() {
+  aimbot_active_target = false;
+}
+
+inline bool aimbot_has_active_target() {
+  return aimbot_active_target;
 }
 
 inline bool aimbot_autoscope_scoped_state(Player* localplayer) {

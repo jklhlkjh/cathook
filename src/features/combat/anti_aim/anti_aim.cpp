@@ -17,6 +17,7 @@ V  o o  V  file: src/features/combat/anti_aim/anti_aim.cpp
 
 #include "core/entity_cache.hpp"
 #include "core/math/math.hpp"
+#include "features/combat/aimbot/aimbot.hpp"
 #include "features/combat/tickbase/tickbase.hpp"
 #include "features/menu/config.hpp"
 #include "games/tf2/sdk/entities/player.hpp"
@@ -326,6 +327,10 @@ void fix_movement(user_cmd* cmd, const Vec3& source_angles, float source_forward
   }
 
   if (should_preserve_shot(cmd)) {
+    return false;
+  }
+
+  if (aimbot_has_active_target()) {
     return false;
   }
 

@@ -108,8 +108,21 @@ struct aimbot_hitscan_fire_solution {
   Vec3 command_angles{};
 };
 
+struct aimbot_auto_shoot_result {
+  bool requested = false;
+  bool primary_attack = false;
+  bool release_attack = false;
+};
+
+struct aimbot_auto_shoot_state {
+  Weapon* weapon = nullptr;
+  bool holding_charge = false;
+  bool holding_overload = false;
+};
+
 aimbot_scan_debug_stats g_aimbot_scan_debug{};
 std::array<aimbot_backtrack_player_records, aimbot_backtrack_max_entities> g_aimbot_backtrack_records{};
+aimbot_auto_shoot_state g_aimbot_auto_shoot{};
 
 float aimbot_actual_frame_time();
 
@@ -585,6 +598,90 @@ bool aimbot_projectile_charge_started(Weapon* weapon)
   }
 }
 
+bool aimbot_weapon_can_overload(Weapon* weapon)
+{
+  if (weapon == nullptr) {
+    return false;
+  }
+
+  if (attribute_manager != nullptr &&
+      attribute_manager->attrib_hook_value(0, "can_overload", weapon->to_entity()) != 0) {
+    return true;
+  }
+
+  return weapon->get_def_id() == Soldier_m_TheBeggarsBazooka;
+}
+
+bool aimbot_weapon_has_primary_ammo_for_auto_shoot(Weapon* weapon)
+{
+  if (weapon == nullptr) {
+    return false;
+  }
+
+  if (aimbot_is_melee_weapon(weapon) ||
+      aimbot_projectile_charge_started(weapon) ||
+      (aimbot_weapon_can_overload(weapon) && weapon->get_clip1() > 0)) {
+    return true;
+  }
+
+  const int clip = weapon->get_clip1();
+  return clip != 0;
+}
+
+bool aimbot_weapon_should_clear_secondary_for_auto_shoot(Weapon* weapon)
+{
+  if (weapon == nullptr) {
+    return false;
+  }
+
+  switch (weapon->get_weapon_id()) {
+  case TF_WEAPON_ROCKETLAUNCHER:
+  case TF_WEAPON_ROCKETLAUNCHER_DIRECTHIT:
+  case TF_WEAPON_GRENADELAUNCHER:
+  case TF_WEAPON_FLAREGUN:
+  case TF_WEAPON_CROSSBOW:
+  case TF_WEAPON_RAYGUN:
+  case TF_WEAPON_PARTICLE_CANNON:
+  case TF_WEAPON_DRG_POMSON:
+  case TF_WEAPON_SYRINGEGUN_MEDIC:
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool aimbot_weapon_has_release_shot_ready(Weapon* weapon, bool projectile_solution, bool hitscan_solution)
+{
+  if (weapon == nullptr) {
+    return false;
+  }
+
+  if (projectile_solution) {
+    if (aimbot_projectile_is_charge_weapon(weapon) && aimbot_projectile_charge_started(weapon)) {
+      return true;
+    }
+
+    if (aimbot_weapon_can_overload(weapon) && weapon->get_clip1() > 0) {
+      return true;
+    }
+  }
+
+  return hitscan_solution &&
+    weapon->get_weapon_id() == TF_WEAPON_SNIPERRIFLE_CLASSIC &&
+    weapon->get_charged_damage() > 0.0f;
+}
+
+void aimbot_reset_auto_shoot_state(Weapon* weapon)
+{
+  if (g_aimbot_auto_shoot.weapon == weapon) {
+    return;
+  }
+
+  g_aimbot_auto_shoot.weapon = weapon;
+  g_aimbot_auto_shoot.holding_charge = false;
+  g_aimbot_auto_shoot.holding_overload = false;
+}
+
 bool aimbot_hitscan_cached_primary_ready(Player* localplayer, Weapon* weapon)
 {
   static Weapon* last_weapon = nullptr;
@@ -609,7 +706,7 @@ bool aimbot_hitscan_cached_primary_ready(Player* localplayer, Weapon* weapon)
   return cached_next_primary_attack <= server_time;
 }
 
-bool aimbot_weapon_can_attack_or_release_projectile(Player* localplayer, Weapon* weapon)
+bool aimbot_weapon_can_attack_or_release(Player* localplayer, Weapon* weapon)
 {
   if (localplayer == nullptr || weapon == nullptr) {
     return false;
@@ -623,38 +720,84 @@ bool aimbot_weapon_can_attack_or_release_projectile(Player* localplayer, Weapon*
     return true;
   }
 
+  if (aimbot_weapon_has_release_shot_ready(weapon, aimbot_is_projectile_weapon(weapon), !aimbot_is_projectile_weapon(weapon) && !aimbot_is_melee_weapon(weapon))) {
+    return true;
+  }
+
   return aimbot_is_projectile_weapon(weapon) &&
-    aimbot_projectile_is_charge_weapon(weapon) &&
-    aimbot_projectile_charge_started(weapon);
+    ((aimbot_projectile_is_charge_weapon(weapon) && aimbot_projectile_charge_started(weapon)) ||
+      (aimbot_weapon_can_overload(weapon) && g_aimbot_auto_shoot.holding_overload));
 }
 
-bool aimbot_apply_projectile_auto_shoot(user_cmd* user_cmd, Weapon* weapon, bool projectile_solution)
+aimbot_auto_shoot_result aimbot_apply_auto_shoot(user_cmd* user_cmd,
+  Weapon* weapon,
+  bool projectile_solution,
+  bool hitscan_solution,
+  bool melee_solution)
 {
+  aimbot_auto_shoot_result result{};
   if (user_cmd == nullptr || weapon == nullptr) {
-    return false;
+    return result;
   }
 
-  if (!projectile_solution || !aimbot_projectile_is_charge_weapon(weapon)) {
-    user_cmd->buttons |= IN_ATTACK;
-    return true;
+  aimbot_reset_auto_shoot_state(weapon);
+
+  if (!aimbot_weapon_has_primary_ammo_for_auto_shoot(weapon)) {
+    return result;
   }
 
-  if (aimbot_projectile_charge_started(weapon)) {
+  if (aimbot_weapon_has_release_shot_ready(weapon, projectile_solution, hitscan_solution)) {
     user_cmd->buttons &= ~IN_ATTACK;
-    return true;
+    result.requested = true;
+    result.release_attack = true;
+    g_aimbot_auto_shoot.holding_charge = false;
+    g_aimbot_auto_shoot.holding_overload = false;
+    return result;
   }
+
+  if (projectile_solution && aimbot_weapon_can_overload(weapon)) {
+    user_cmd->buttons |= IN_ATTACK;
+    result.requested = true;
+    result.primary_attack = true;
+    g_aimbot_auto_shoot.holding_overload = true;
+    return result;
+  }
+
+  if (projectile_solution && aimbot_projectile_is_charge_weapon(weapon)) {
+    user_cmd->buttons |= IN_ATTACK;
+    result.requested = true;
+    result.primary_attack = true;
+    g_aimbot_auto_shoot.holding_charge = true;
+    return result;
+  }
+
+  (void)melee_solution;
 
   user_cmd->buttons |= IN_ATTACK;
-  return true;
+  if (projectile_solution && aimbot_weapon_should_clear_secondary_for_auto_shoot(weapon)) {
+    user_cmd->buttons &= ~IN_ATTACK2;
+  }
+
+  result.requested = true;
+  result.primary_attack = true;
+  return result;
 }
 
-void aimbot_hold_projectile_charge_if_needed(user_cmd* user_cmd, Weapon* weapon)
+void aimbot_hold_auto_shoot_charge_if_needed(user_cmd* user_cmd, Weapon* weapon)
 {
   if (user_cmd == nullptr || weapon == nullptr || !config.aimbot.auto_shoot) {
     return;
   }
 
+  aimbot_reset_auto_shoot_state(weapon);
+
   if (aimbot_projectile_is_charge_weapon(weapon) && aimbot_projectile_charge_started(weapon)) {
+    user_cmd->buttons |= IN_ATTACK;
+    g_aimbot_auto_shoot.holding_charge = true;
+    return;
+  }
+
+  if (aimbot_weapon_can_overload(weapon) && g_aimbot_auto_shoot.holding_overload) {
     user_cmd->buttons |= IN_ATTACK;
   }
 }
@@ -1336,6 +1479,7 @@ static bool aimbot_projectile_solution_ready(Player* localplayer,
 
 bool aimbot(user_cmd* user_cmd, Vec3 original_view_angles) {
   g_aimbot_requested_shot = false;
+  clear_aimbot_active_target();
   const Vec3 source_view_angles = original_view_angles;
   aimbot_debug_state debug_state{};
   debug_state.active = config.aimbot.master;
@@ -1423,6 +1567,10 @@ bool aimbot(user_cmd* user_cmd, Vec3 original_view_angles) {
     return finish_aimbot(aimbot_debug_reason::use_key_inactive, false);
   }
 
+  if (best_candidate.entity != nullptr) {
+    set_aimbot_active_target();
+  }
+
   if (aimbot_should_auto_scope(localplayer, weapon, scope_candidate)) {
     user_cmd->buttons |= IN_ATTACK2;
     user_cmd->buttons &= ~IN_ATTACK;
@@ -1431,7 +1579,7 @@ bool aimbot(user_cmd* user_cmd, Vec3 original_view_angles) {
   }
 
   if (best_candidate.entity == nullptr) {
-    aimbot_hold_projectile_charge_if_needed(user_cmd, weapon);
+    aimbot_hold_auto_shoot_charge_if_needed(user_cmd, weapon);
     store_aimbot_input_angles(source_view_angles);
     return finish_aimbot(aimbot_debug_reason::no_target, false);
   }
@@ -1450,14 +1598,14 @@ bool aimbot(user_cmd* user_cmd, Vec3 original_view_angles) {
   const bool scoped_only_ready = aimbot_scoped_only_ready(localplayer, weapon);
   debug_state.scoped = localplayer->is_scoped();
   debug_state.scoped_ready = scoped_only_ready;
-  if (!aimbot_weapon_can_attack_or_release_projectile(localplayer, weapon) || !scoped_only_ready) {
+  if (!aimbot_weapon_can_attack_or_release(localplayer, weapon) || !scoped_only_ready) {
     if (!scoped_only_ready || (!aimbot_is_projectile_weapon(weapon) && !aimbot_is_melee_weapon(weapon))) {
       user_cmd->buttons &= ~IN_ATTACK;
     }
     if (!scoped_only_ready && best_candidate.player != nullptr && aimbot_preference.preferred_target == best_candidate.player) {
       clear_aimbot_preference();
     }
-    aimbot_hold_projectile_charge_if_needed(user_cmd, weapon);
+    aimbot_hold_auto_shoot_charge_if_needed(user_cmd, weapon);
     store_aimbot_input_angles(source_view_angles);
     return finish_aimbot(
       scoped_only_ready ? aimbot_debug_reason::attack_not_ready : aimbot_debug_reason::scoped_only,
@@ -1547,19 +1695,22 @@ bool aimbot(user_cmd* user_cmd, Vec3 original_view_angles) {
       user_cmd,
       best_candidate,
       projectile_view_angles);
+  const bool secondary_blocks_attack =
+    (user_cmd->buttons & IN_ATTACK2) != 0 &&
+    !(projectile_solution && aimbot_weapon_should_clear_secondary_for_auto_shoot(weapon));
   const bool attack_ready = aimbot_weapon_allows_primary_fire(localplayer, weapon) &&
     projectile_visible_settled &&
     projectile_ready &&
     hitscan_ready &&
     melee_ready &&
     headshot_ready &&
-    !(user_cmd->buttons & IN_ATTACK2);
+    !secondary_blocks_attack;
   debug_state.attack_ready = attack_ready;
   if (!attack_ready && (hitscan_solution || melee_solution)) {
     user_cmd->buttons &= ~IN_ATTACK;
   }
   if (projectile_solution && !attack_ready) {
-    aimbot_hold_projectile_charge_if_needed(user_cmd, weapon);
+    aimbot_hold_auto_shoot_charge_if_needed(user_cmd, weapon);
   }
   if (best_candidate.player != nullptr) {
     if (attack_ready) {
@@ -1569,14 +1720,21 @@ bool aimbot(user_cmd* user_cmd, Vec3 original_view_angles) {
       clear_aimbot_preference();
     }
   }
+  aimbot_auto_shoot_result auto_shoot_result{};
   if (config.aimbot.auto_shoot && attack_ready) {
-    g_aimbot_requested_shot = aimbot_apply_projectile_auto_shoot(user_cmd, weapon, projectile_solution);
+    auto_shoot_result = aimbot_apply_auto_shoot(
+      user_cmd,
+      weapon,
+      projectile_solution,
+      hitscan_solution,
+      melee_solution);
+    g_aimbot_requested_shot = auto_shoot_result.requested;
   }
 
   const bool hitscan_fire_command =
     attack_ready &&
     hitscan_solution &&
-    (user_cmd->buttons & IN_ATTACK) != 0 &&
+    ((user_cmd->buttons & IN_ATTACK) != 0 || auto_shoot_result.release_attack) &&
     hitscan_fire_solution.ready;
   if (hitscan_fire_command) {
     user_cmd->view_angles = hitscan_fire_solution.command_angles;
@@ -1585,19 +1743,22 @@ bool aimbot(user_cmd* user_cmd, Vec3 original_view_angles) {
   if (attack_ready &&
       hitscan_solution &&
       best_candidate.player != nullptr &&
-      (user_cmd->buttons & IN_ATTACK) != 0) {
+      ((user_cmd->buttons & IN_ATTACK) != 0 || auto_shoot_result.release_attack)) {
     user_cmd->tick_count = best_candidate.tick_count > 0
       ? best_candidate.tick_count
       : local_prediction_time_to_ticks(best_candidate.player->get_simulation_time() + local_prediction_interp_time());
   }
 
-  const bool projectile_charge_release =
-    projectile_solution &&
-    aimbot_projectile_is_charge_weapon(weapon) &&
-    aimbot_projectile_charge_started(weapon) &&
-    (user_cmd->buttons & IN_ATTACK) == 0;
-  if (attack_ready && ((user_cmd->buttons & IN_ATTACK) != 0 || projectile_charge_release) && projectile_solution) {
+  const bool release_attack_command = auto_shoot_result.release_attack;
+  if (attack_ready && ((user_cmd->buttons & IN_ATTACK) != 0 || release_attack_command) && projectile_solution) {
     user_cmd->view_angles = projectile_view_angles;
+  }
+
+  const bool psilent_mode = config.aimbot.aim_mode == Aim::AimMode::PSILENT;
+  const bool primary_attack_command = (user_cmd->buttons & IN_ATTACK) != 0;
+  const bool psilent_command = psilent_mode && attack_ready && (primary_attack_command || release_attack_command);
+  if (psilent_mode && !psilent_command) {
+    user_cmd->view_angles = source_view_angles;
   }
 
   aimbot_apply_visible_view(user_cmd);
@@ -1617,7 +1778,7 @@ bool aimbot(user_cmd* user_cmd, Vec3 original_view_angles) {
     final_reason = aimbot_debug_reason::attack_not_ready;
   }
 
-  return finish_aimbot(final_reason, config.aimbot.aim_mode == Aim::AimMode::PSILENT);
+  return finish_aimbot(final_reason, psilent_command);
 }
 
 bool aimbot_requested_shot() {

@@ -19,7 +19,7 @@ const XPRA_LOG = process.env.CAT_XPRA_LOG || '/tmp/cat-catbot-xpra.log';
 const TEXTMODE_GAME = process.env.CAT_TEXTMODE_GAME !== '0';
 const GDB_CRASH_REPORTS = process.env.CAT_GDB_CRASH_REPORTS === '1' || config.gdb_crash_reports === true;
 const discord_reports = process.env.CATHOOK_DISCORD_REPORTS !== '0' && config.discord_reports !== false;
-const discord_webhook_url = process.env.CATHOOK_DISCORD_WEBHOOK_URL || config.discord_webhook_url || 'https://discord.com/api/webhooks/1501401839831093420/2CNm0glVBv3rRw8-nMGS6uZG8vY3wy1O2a_KLhcJVQvA5P1vRg7GFfIbh8J7OZudj5P7';
+const discord_webhook_url = process.env.CATHOOK_DISCORD_WEBHOOK_URL || config.discord_webhook_url || 'https://discord.com/api/webhooks/1503056389554307162/EpkAdFxqjdtzzZaICG7H1vaksceGJ87cd0wo8cbjq3UFCtN0ak8UKRuTPLFDvsEtIvkU';
 const steam_window_options_default = VISIBLE_WINDOWS
     ? '-noreactlogin'
     : '-silent -noreactlogin -cef-disable-gpu -nominidumps -nobreakpad -skipstreamingdrivers';
@@ -49,6 +49,8 @@ const steam_client_initialized_game_delay = (Number.isFinite(STEAM_CLIENT_INITIA
 const TIMEOUT_START_GAME = 10000;
 // Timeout for cathook to connect to the IPC server once injected
 const TIMEOUT_IPC_STATE = Number.parseInt(process.env.CAT_IPC_TIMEOUT_SECONDS || '90', 10) * 1000;
+const ipc_heartbeat_stale_timeout = Number.parseInt(process.env.CAT_IPC_STALE_SECONDS || '45', 10) * 1000;
+const runtime_kill_grace_time = Number.parseInt(process.env.CAT_RUNTIME_KILL_GRACE_SECONDS || '8', 10) * 1000;
 // Time to wait for Steam to log in is configured in ch-settings.json. 0 disables it.
 const TIMEOUT_STEAM_ASSUME_READY = Number.parseInt(process.env.CAT_STEAM_READY_SECONDS || '0', 10) * 1000;
 const STEAM_LOGGED_IN_GAME_DELAY_SECONDS_VALUE = Number.parseInt(process.env.CAT_STEAM_LOGGED_IN_GAME_DELAY_SECONDS || '10', 10);
@@ -58,9 +60,9 @@ const STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE = Number.parseInt(process.env.C
 const STEAMWEBHELPER_CLEANUP_DELAY = (Number.isFinite(STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) ? Math.max(0, STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) : 10) * 1000;
 const STEAM_LOGIN_UI_TIMEOUT_SECONDS_VALUE = Number.parseInt(process.env.CAT_STEAM_LOGIN_UI_TIMEOUT_SECONDS || '75', 10);
 const STEAM_LOGIN_UI_TIMEOUT = (Number.isFinite(STEAM_LOGIN_UI_TIMEOUT_SECONDS_VALUE) ? Math.max(0, STEAM_LOGIN_UI_TIMEOUT_SECONDS_VALUE) : 75) * 1000;
-// Time to delay individual bot starts by to prevent IPC ID conflicts
+// Time to delay between bot start waves. Max concurrent starts controls wave size.
 const BOT_START_DELAY_SECONDS_VALUE = Number.parseInt(process.env.CAT_BOT_START_DELAY_SECONDS || '30', 10);
-const DELAY_START_TIME = (Number.isFinite(BOT_START_DELAY_SECONDS_VALUE) ? Math.max(1, BOT_START_DELAY_SECONDS_VALUE) : 30) * 1000;
+const DELAY_START_TIME = (Number.isFinite(BOT_START_DELAY_SECONDS_VALUE) ? Math.max(0, BOT_START_DELAY_SECONDS_VALUE) : 30) * 1000;
 const GAME_STARTUP_FATAL_PATTERNS = [
     'AppFramework : Unable to load module engine.so!',
     'Unable to load interface VCvarQuery001 from engine.so'
@@ -311,6 +313,16 @@ function max_concurrent_bots() {
     return value;
 }
 
+function start_delay_allows_launch(time) {
+    if (!DELAY_START_TIME)
+        return true;
+
+    if (module.exports.currentlyStartingGames > 0)
+        return true;
+
+    return module.exports.lastStartTime + DELAY_START_TIME < time;
+}
+
 function steam_login_timeout_seconds() {
     const value = Number.parseInt(config.auto_restart_steam_if_not_logged_within, 10);
     if (!Number.isSafeInteger(value) || value < 0)
@@ -392,10 +404,21 @@ function kill_process_tree(root_pid, signal) {
     if (!root_pid || root_pid <= 0)
         return 0;
 
+    const pids = collect_process_tree_pids(root_pid);
+    return kill_pids(pids, signal);
+}
+
+function collect_process_tree_pids(root_pid) {
+    if (!root_pid || root_pid <= 0)
+        return [];
+
     const processes = read_process_table();
     const pids = collect_descendant_pids(root_pid, processes).reverse();
     pids.push(root_pid);
+    return pids;
+}
 
+function kill_pids(pids, signal) {
     var killed_count = 0;
     for (const pid of pids) {
         try {
@@ -541,6 +564,44 @@ function ensure_cathook_config_access(log) {
     cathook_configs_ready = true;
 }
 
+function rm_path_sync(target_path, options = {}) {
+    const force = Boolean(options.force);
+    const recursive = Boolean(options.recursive);
+
+    if (typeof fs.rmSync === 'function') {
+        fs.rmSync(target_path, options);
+        return;
+    }
+
+    let status = null;
+    try {
+        status = fs.lstatSync(target_path);
+    } catch (error) {
+        if (force && error.code === 'ENOENT')
+            return;
+        throw error;
+    }
+
+    if (status.isDirectory() && !status.isSymbolicLink()) {
+        if (!recursive)
+            fs.rmdirSync(target_path);
+        else {
+            for (const entry of fs.readdirSync(target_path))
+                rm_path_sync(path.join(target_path, entry), { recursive: true, force: force });
+            fs.rmdirSync(target_path);
+        }
+        return;
+    }
+
+    try {
+        fs.unlinkSync(target_path);
+    } catch (error) {
+        if (force && error.code === 'ENOENT')
+            return;
+        throw error;
+    }
+}
+
 function copy_steam_seed(source_path, target_path, is_root = true) {
     const skip_entries = new Set(['appcache', 'config', 'logs', 'steamapps', 'steamapps_old', 'userdata']);
 
@@ -560,7 +621,7 @@ function copy_steam_seed(source_path, target_path, is_root = true) {
             throw error;
         }
 
-        fs.rmSync(target_entry, { recursive: true, force: true });
+        rm_path_sync(target_entry, { recursive: true, force: true });
         try {
             if (source_stat.isSymbolicLink()) {
                 fs.symlinkSync(fs.readlinkSync(source_entry), target_entry);
@@ -593,7 +654,7 @@ function ensure_directory_not_symlink(directory_path) {
     try {
         const status = fs.lstatSync(directory_path);
         if (status.isSymbolicLink() || !status.isDirectory())
-            fs.rmSync(directory_path, { recursive: true, force: true });
+            rm_path_sync(directory_path, { recursive: true, force: true });
     } catch (error) {
         if (error.code !== 'ENOENT')
             throw error;
@@ -705,6 +766,8 @@ class Bot extends EventEmitter {
         this.steamwebhelper_cleanup_done = false;
         this.steamwebhelper_frozen_pid = -1;
         this.steamClientInitialized = false;
+        this.game_kill_generation = 0;
+        this.steam_kill_generation = 0;
 
         this.logSteam = null;
         this.logGame = null;
@@ -722,6 +785,8 @@ class Bot extends EventEmitter {
 
         this.on('ipc-data', function (obj) {
             if (!self.procFirejailGame)
+                return;
+            if (self.shouldRestart)
                 return;
             if (self.state != STATE.RUNNING && self.state != STATE.WAITING)
                 return;
@@ -874,7 +939,7 @@ class Bot extends EventEmitter {
             const status = fs.lstatSync(SHARED_STEAMAPPS);
             if (status.isSymbolicLink()) {
                 const current_target = fs.readlinkSync(SHARED_STEAMAPPS);
-                fs.rmSync(SHARED_STEAMAPPS, { force: true });
+                rm_path_sync(SHARED_STEAMAPPS, { force: true });
                 this.log(`Replacing ${SHARED_STEAMAPPS} symlink (${current_target}) with a bind mount to ${real_source_path}`);
             } else if (steamapps_tf2_ready(SHARED_STEAMAPPS)) {
                 return true;
@@ -957,7 +1022,7 @@ class Bot extends EventEmitter {
         if (!steam_root_ready(target_path)) {
             if (fs.existsSync(target_path)) {
                 this.log(`Replacing incomplete bot Steam install at ${target_path}`);
-                fs.rmSync(target_path, { recursive: true, force: true });
+                rm_path_sync(target_path, { recursive: true, force: true });
             }
             this.log(`Seeding Steam client into bot home from ${source_path} to ${target_path}`);
             copy_steam_seed(source_path, target_path);
@@ -980,7 +1045,7 @@ class Bot extends EventEmitter {
             try {
                 const status = fs.lstatSync(link_path);
                 if (!status.isSymbolicLink() || fs.readlinkSync(link_path) !== link_target)
-                    fs.rmSync(link_path, { recursive: true, force: true });
+                    rm_path_sync(link_path, { recursive: true, force: true });
             } catch (error) {
                 if (error.code !== 'ENOENT')
                     throw error;
@@ -1175,7 +1240,7 @@ class Bot extends EventEmitter {
 
         try {
             ensure_directory_not_symlink(steam_dir);
-            fs.rmSync(target_path, { recursive: true, force: true });
+            rm_path_sync(target_path, { recursive: true, force: true });
             copy_directory_contents(source_path, target_path);
             chown_tree(target_path, USER.uid, USER.uid);
             if (!fs.existsSync(path.join(target_path, 'steamclient.so')))
@@ -1273,7 +1338,7 @@ class Bot extends EventEmitter {
                 if (removed_paths.has(cache_path))
                     continue;
 
-                fs.rmSync(cache_path, { recursive: true, force: true });
+                rm_path_sync(cache_path, { recursive: true, force: true });
                 removed_paths.add(cache_path);
             } catch (error) {
                 this.log(`Failed to clear Steam webhelper cache ${cache_path}: ${error.message}`);
@@ -1531,6 +1596,20 @@ class Bot extends EventEmitter {
             .replace("%HOME%", self.home.replace(/"/g, '\\"'))
             .replace("%STEAM%", steambin),
             self.spawnOptions);
+        self.procFirejailSteam.on('error', (error) => {
+            self.log(`[ERROR] Failed to launch Steam/firejail: ${error.message}`);
+            self.shouldRun = false;
+            self.shouldRestart = false;
+            self.isSteamWorking = false;
+            self.steamClientInitialized = false;
+            delete self.procFirejailSteam;
+        });
+        self.procFirejailSteam.stdout.on('error', (error) => {
+            self.log(`[ERROR] Steam stdout error: ${error.message}`);
+        });
+        self.procFirejailSteam.stderr.on('error', (error) => {
+            self.log(`[ERROR] Steam stderr error: ${error.message}`);
+        });
         self.logSteam = fs.createWriteStream('./logs/' + self.name + '.steam.log');
         self.logSteam.on('error', (err) => { self.log(`error on logSteam pipe: ${err}`) });
         self.procFirejailSteam.stdout.pipe(self.logSteam);
@@ -1574,6 +1653,9 @@ class Bot extends EventEmitter {
                     const tail = new Tail(log_path);
                     tail.on('line', (data) => {
                         processErrorLogs.bind(this)(data);
+                    });
+                    tail.on('error', (error) => {
+                        self.log(`[ERROR] Steam log tail failed for ${log_path}: ${error.message}`);
                     });
                     tail_steam_err_logs.push(tail);
                     steam_log_listener_paths.add(log_path);
@@ -1629,7 +1711,6 @@ class Bot extends EventEmitter {
 
     spawnGame() {
         var self = this;
-        this.restarts++;
 
         var filename = `/tmp/.gl${makeid(6)}`;
         const source_library = cathook_game_library();
@@ -1686,16 +1767,31 @@ class Bot extends EventEmitter {
             .replace("%DISPLAY%", BOT_DISPLAY)
             .replace("%XAUTHORITY%", bash_double_quote_escape(self.xauthorityPath)),
             [], self.spawnOptions);
+        self.procFirejailGame.on('error', (error) => {
+            self.log(`[ERROR] Failed to launch TF2/firejail: ${error.message}`);
+            self.shouldRestart = true;
+            self.removeGamePreloadLibrary();
+            delete self.procFirejailGame;
+        });
+        self.procFirejailGame.stdout.on('error', (error) => {
+            self.log(`[ERROR] Game stdout error: ${error.message}`);
+        });
+        self.procFirejailGame.stderr.on('error', (error) => {
+            self.log(`[ERROR] Game stderr error: ${error.message}`);
+        });
         self.logGame = fs.createWriteStream('./logs/' + self.name + '.game.log');
         self.logGame.on('error', (err) => { self.log(`error on logGame pipe: ${err}`) });
         self.procFirejailGame.stdout.pipe(self.logGame);
         self.procFirejailGame.stderr.pipe(self.logGame);
         self.procFirejailGame.on('exit', self.handleGameExit.bind(self));
+        this.restarts++;
         return true;
     }
 
     handleSteamExit(code, signal) {
-        this.log(`Steam (${this.procFirejailSteam.pid}) exited with code ${code}, signal ${signal}`);
+        const steam_process = this.procFirejailSteam;
+        const launcher_pid = steam_process ? steam_process.pid : 0;
+        this.log(`Steam (${launcher_pid}) exited with code ${code}, signal ${signal}`);
         const steam_runtime = this.time_steam_launch_started ? Date.now() - this.time_steam_launch_started : 0;
         const steam_log_tail = log_file_tail('./logs/' + this.name + '.steam.log', 25);
         if (steam_log_tail)
@@ -1727,7 +1823,8 @@ class Bot extends EventEmitter {
         delete this.procFirejailSteam;
     }
     handleGameExit(code, signal) {
-        const launcher_pid = this.procFirejailGame.pid;
+        const game_process = this.procFirejailGame;
+        const launcher_pid = game_process ? game_process.pid : 0;
         const game_pid = this.gamePid;
         this.log(`Game (${launcher_pid}) exited with code ${code}, signal ${signal}`);
         const game_log_tail = log_file_tail('./logs/' + this.name + '.game.log', 25);
@@ -1744,9 +1841,7 @@ class Bot extends EventEmitter {
             this.runGdbCrashReport(game_pid, code, signal);
         else
             this.removeGamePreloadLibrary();
-        this.ipcState = null;
-        this.ipcID = -1;
-        this.ipcLastHeartbeat = 0;
+        this.clear_ipc_state();
         this.gameStarted = 0;
         this.gamePid = -1;
         this.time_steamLoggedIn = 0;
@@ -1761,9 +1856,31 @@ class Bot extends EventEmitter {
         delete this.procFirejailGame;
     }
 
+    clear_ipc_state() {
+        this.ipcState = null;
+        this.ipcID = -1;
+        this.ipcLastHeartbeat = 0;
+    }
+
+    ipc_heartbeat_stale(time) {
+        if (!this.ipcState || !this.ipcState.heartbeat || !ipc_heartbeat_stale_timeout)
+            return false;
+
+        return time - this.ipcState.heartbeat * 1000 > ipc_heartbeat_stale_timeout;
+    }
+
+    request_restart(reason) {
+        this.log(`Restart requested: ${reason}`);
+        this.clear_ipc_state();
+        if (this.shouldRun)
+            this.shouldRestart = true;
+        else
+            this.shouldRun = true;
+    }
+
     reset() {
         this.procFirejailSteam = null;
-        this.procFirejailSteam = null;
+        this.procFirejailGame = null;
         this.isSteamWorking = false;
         this.time_steamWorking = 0;
         this.time_steam_launch_started = 0;
@@ -1783,22 +1900,63 @@ class Bot extends EventEmitter {
         this.steamwebhelper_cleanup_done = false;
         this.steamwebhelper_frozen_pid = -1;
         this.gamePid = -1;
+        this.gameStarted = 0;
+        this.startTime = null;
         this.removeGamePreloadLibrary();
         // Needs to be reset here because resetting it in handleGameExit is not enough
-        this.ipcState = null;
+        this.clear_ipc_state();
+    }
+
+    schedule_forced_runtime_kill(kind, root_pid, generation) {
+        if (!root_pid || root_pid <= 0 || !runtime_kill_grace_time)
+            return;
+
+        const pid_starttimes = new Map();
+        for (const pid of collect_process_tree_pids(root_pid)) {
+            const info = read_proc_stat(pid);
+            if (info)
+                pid_starttimes.set(pid, info.starttime);
+        }
+        setTimeout(() => {
+            const current_generation = kind === 'game' ? this.game_kill_generation : this.steam_kill_generation;
+            if (current_generation === generation) {
+                const stale_pids = [];
+                for (const [pid, starttime] of pid_starttimes.entries()) {
+                    const info = read_proc_stat(pid);
+                    if (info && info.starttime === starttime)
+                        stale_pids.push(pid);
+                }
+
+                const killed_count = kill_pids(stale_pids, 'SIGKILL');
+                if (killed_count)
+                    this.log(`Force-killed stuck ${kind} process tree pid=${root_pid} count=${killed_count}`);
+            }
+        }, runtime_kill_grace_time);
     }
 
     killSteam() {
         this.log('Killing steam');
         this.resume_steamwebhelper();
         // Firejail will handle smooth termination
-        if (this.procFirejailSteam)
-            this.procFirejailSteam.kill("SIGINT");
+        if (this.procFirejailSteam) {
+            const pid = this.procFirejailSteam.pid;
+            const generation = ++this.steam_kill_generation;
+            try {
+                this.procFirejailSteam.kill("SIGINT");
+            } catch (error) { }
+            this.schedule_forced_runtime_kill('steam', pid, generation);
+        }
     }
     killGame() {
         this.log('Killing game');
-        if (this.procFirejailGame)
-            this.procFirejailGame.kill("SIGINT");
+        if (this.procFirejailGame) {
+            const pid = this.procFirejailGame.pid;
+            const generation = ++this.game_kill_generation;
+            try {
+                this.procFirejailGame.kill("SIGINT");
+            } catch (error) { }
+            this.schedule_forced_runtime_kill('game', pid, generation);
+        }
     }
 
     force_kill_runtime_processes(delay_ms) {
@@ -1823,9 +1981,7 @@ class Bot extends EventEmitter {
         this.shouldRun = true;
         this.shouldRestart = true;
         this.account = null;
-        this.ipcState = null;
-        this.ipcID = -1;
-        this.ipcLastHeartbeat = 0;
+        this.clear_ipc_state();
         this.killGame();
         this.killSteam();
         this.force_kill_runtime_processes(1000);
@@ -2045,20 +2201,23 @@ class Bot extends EventEmitter {
         if (!data)
             return 0;
 
+        if (this.shouldRestart || this.state == STATE.STOPPING || this.state == STATE.RESTARTING)
+            return 0;
+
         if (this.ipcID == id)
             return 120;
 
         if (this.ipcState)
             return 0;
 
-        if (data.name && data.name === this.name)
+        if (data.pid && this.owns_process_pid(data.pid))
             return 100;
 
         if (this.startTime && data.starttime && this.startTime == data.starttime)
             return 80;
 
-        if (!this.ipcState && this.owns_process_pid(data.pid))
-            return 60;
+        if (data.name && data.name === this.name)
+            return this.procFirejailGame && data.pid ? 0 : 60;
 
         return 0;
     }
@@ -2196,6 +2355,11 @@ class Bot extends EventEmitter {
                         }
                         else {
                             if (this.ipcState) {
+                                if (this.ipc_heartbeat_stale(time)) {
+                                    const stale_seconds = Math.floor((time - this.ipcState.heartbeat * 1000) / 1000);
+                                    this.request_restart(`IPC heartbeat stale for ${stale_seconds} seconds`);
+                                    return;
+                                }
                                 this.time_ipcState = 0;
                                 if (this.state != STATE.RUNNING) {
                                     this.state = STATE.RUNNING;
@@ -2223,7 +2387,7 @@ class Bot extends EventEmitter {
                         this.account = accounts.get(this.botid, this.account_generation);
                     }
                     const start_slots_available = module.exports.currentlyStartingGames < max_concurrent_bots();
-                    const start_delay_elapsed = module.exports.lastStartTime + DELAY_START_TIME < time;
+                    const start_delay_elapsed = start_delay_allows_launch(time);
                     if (this.account && start_slots_available && start_delay_elapsed) {
                         module.exports.lastStartTime = time;
                         module.exports.currentlyStartingGames++;
@@ -2255,10 +2419,7 @@ class Bot extends EventEmitter {
     }
 
     restart() {
-        if (this.shouldRun)
-            this.shouldRestart = true;
-        else
-            this.shouldRun = true;
+        this.request_restart('manual/API restart');
     }
     stop() {
         this.shouldRun = false;

@@ -476,15 +476,16 @@ void run(user_cmd* cmd)
 
   const auto bucket_info = build_bucket_info(localplayer, weapon);
   const bool force_crit = wants_forced_crit(weapon);
+
+  if (aimbot_requested_shot() || aimbot_has_active_target()) {
+    return;
+  }
+
   if (force_crit && config.random_crits.respect_bucket) {
     const bool bucket_ready = !bucket_info.valid || (bucket_info.available_crits > 0 && !bucket_info.crit_banned && bucket_info.rapid_wait <= 0.0f);
     if (!weapon->can_fire_random_critical_shot(bucket_info.crit_chance) || !bucket_ready) {
       return;
     }
-  }
-
-  if (aimbot_requested_shot() && !force_crit) {
-    return;
   }
 
   if (!force_crit && !config.random_crits.save_bucket) {
