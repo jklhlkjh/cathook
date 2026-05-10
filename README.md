@@ -32,6 +32,14 @@ For Source Engine interface and structure references, see Valve's [Source SDK 20
 Officially supported Linux distros are Debian, Ubuntu, Linux Mint, Debian-close distros, and Manjaro.
 Other distros may work if the dependency installer has a matching package script, but they are not officially supported.
 
+Make sure to run chmod +x [NAME] if it says permissions denied.
+
+Clone the repository by using
+
+```
+git clone https://github.com/jklhlkjh/cathook
+```
+
 Install build dependencies for your distro:
 
 ```sh
