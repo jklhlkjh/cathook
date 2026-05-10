@@ -6,6 +6,13 @@
   Cathook is a Team Fortress 2 Linux internal DLC.
 </p>
 
+# IMPORTANT!!!!
+
+Please install steam using this command in the terminal:
+```
+sudo apt install steam
+```
+
 # BETA WARNING
 
 This project is currently in beta. Some features may be broken, unfinished, unstable, or may not work at all. Expect bugs, crashes, missing behavior, and issues.
