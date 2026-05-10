@@ -34,7 +34,7 @@ Other distros may work if the dependency installer has a matching package script
 
 Make sure to run chmod +x [NAME] if it says permissions denied.
 
-Clone the repository by using
+Clone the repository by using:
 
 ```
 git clone https://github.com/jklhlkjh/cathook
