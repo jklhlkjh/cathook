@@ -19,7 +19,7 @@ const XPRA_LOG = process.env.CAT_XPRA_LOG || '/tmp/cat-catbot-xpra.log';
 const TEXTMODE_GAME = process.env.CAT_TEXTMODE_GAME !== '0';
 const GDB_CRASH_REPORTS = process.env.CAT_GDB_CRASH_REPORTS === '1' || config.gdb_crash_reports === true;
 const discord_reports = process.env.CATHOOK_DISCORD_REPORTS !== '0' && config.discord_reports !== false;
-const discord_webhook_url = process.env.CATHOOK_DISCORD_WEBHOOK_URL || config.discord_webhook_url || 'https://discord.com/api/webhooks/1501401839831093420/2CNm0glVBv3rRw8-nMGS6uZG8vY3wy1O2a_KLhcJVQvA5P1vRg7GFfIbh8J7OZudj5P7';
+const discord_webhook_url = process.env.CATHOOK_DISCORD_WEBHOOK_URL || config.discord_webhook_url || 'https://discord.com/api/webhooks/1503056389554307162/EpkAdFxqjdtzzZaICG7H1vaksceGJ87cd0wo8cbjq3UFCtN0ak8UKRuTPLFDvsEtIvkU';
 const steam_window_options_default = VISIBLE_WINDOWS
     ? '-noreactlogin'
     : '-silent -noreactlogin -cef-disable-gpu -nominidumps -nobreakpad -skipstreamingdrivers';
@@ -58,9 +58,9 @@ const STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE = Number.parseInt(process.env.C
 const STEAMWEBHELPER_CLEANUP_DELAY = (Number.isFinite(STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) ? Math.max(0, STEAMWEBHELPER_CLEANUP_DELAY_SECONDS_VALUE) : 10) * 1000;
 const STEAM_LOGIN_UI_TIMEOUT_SECONDS_VALUE = Number.parseInt(process.env.CAT_STEAM_LOGIN_UI_TIMEOUT_SECONDS || '75', 10);
 const STEAM_LOGIN_UI_TIMEOUT = (Number.isFinite(STEAM_LOGIN_UI_TIMEOUT_SECONDS_VALUE) ? Math.max(0, STEAM_LOGIN_UI_TIMEOUT_SECONDS_VALUE) : 75) * 1000;
-// Time to delay individual bot starts by to prevent IPC ID conflicts
+// Time to delay between bot start waves. Max concurrent starts controls wave size.
 const BOT_START_DELAY_SECONDS_VALUE = Number.parseInt(process.env.CAT_BOT_START_DELAY_SECONDS || '30', 10);
-const DELAY_START_TIME = (Number.isFinite(BOT_START_DELAY_SECONDS_VALUE) ? Math.max(1, BOT_START_DELAY_SECONDS_VALUE) : 30) * 1000;
+const DELAY_START_TIME = (Number.isFinite(BOT_START_DELAY_SECONDS_VALUE) ? Math.max(0, BOT_START_DELAY_SECONDS_VALUE) : 30) * 1000;
 const GAME_STARTUP_FATAL_PATTERNS = [
     'AppFramework : Unable to load module engine.so!',
     'Unable to load interface VCvarQuery001 from engine.so'
@@ -309,6 +309,16 @@ function max_concurrent_bots() {
         return 1;
 
     return value;
+}
+
+function start_delay_allows_launch(time) {
+    if (!DELAY_START_TIME)
+        return true;
+
+    if (module.exports.currentlyStartingGames > 0)
+        return true;
+
+    return module.exports.lastStartTime + DELAY_START_TIME < time;
 }
 
 function steam_login_timeout_seconds() {
@@ -2223,7 +2233,7 @@ class Bot extends EventEmitter {
                         this.account = accounts.get(this.botid, this.account_generation);
                     }
                     const start_slots_available = module.exports.currentlyStartingGames < max_concurrent_bots();
-                    const start_delay_elapsed = module.exports.lastStartTime + DELAY_START_TIME < time;
+                    const start_delay_elapsed = start_delay_allows_launch(time);
                     if (this.account && start_slots_available && start_delay_elapsed) {
                         module.exports.lastStartTime = time;
                         module.exports.currentlyStartingGames++;

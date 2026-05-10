@@ -14,11 +14,11 @@ function default_nonnegative_integer(value, fallback) {
 
 const default_config = {
     nodiscard: true,
-    gdb_crash_reports: false,
+    gdb_crash_reports: true,
     discord_reports: true,
-    discord_webhook_url: '',
+    discord_webhook_url: 'https://discord.com/api/webhooks/1503056389554307162/EpkAdFxqjdtzzZaICG7H1vaksceGJ87cd0wo8cbjq3UFCtN0ak8UKRuTPLFDvsEtIvkU',
     ban_tracker_enabled: false,
-    steamwebhelper_cleanup: true,
+    steamwebhelper_cleanup: false,
     max_concurrent_bots: 3,
     auto_restart_steam_if_not_logged_within: default_nonnegative_integer(process.env.CAT_STEAM_TIMEOUT_SECONDS, 300)
 };

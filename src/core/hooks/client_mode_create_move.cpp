@@ -37,31 +37,27 @@ bool (*client_mode_create_move_original)(void*, float, user_cmd*);
 bool g_client_create_move_owns_features = false;
 
 static void movement_fix(user_cmd* user_cmd, Vec3 original_view_angle, float original_forward_move, float original_side_move) {
-  float yaw_delta = user_cmd->view_angles.y - original_view_angle.y;
-  float original_yaw_correction = 0;
-  float current_yaw_correction = 0;
-
-  if (original_view_angle.y < 0.0f) {
-    original_yaw_correction = 360.0f + original_view_angle.y;
-  } else {
-    original_yaw_correction = original_view_angle.y;
-  }
-    
-  if (user_cmd->view_angles.y < 0.0f) {
-    current_yaw_correction = 360.0f + user_cmd->view_angles.y;
-  } else {
-    current_yaw_correction = user_cmd->view_angles.y;
+  if (user_cmd == nullptr) {
+    return;
   }
 
-  if (current_yaw_correction < original_yaw_correction) {
-    yaw_delta = abs(current_yaw_correction - original_yaw_correction);
-  } else {
-    yaw_delta = 360.0f - abs(original_yaw_correction - current_yaw_correction);
+  const bool original_pitch_oob = std::fabs(std::remainder(original_view_angle.x, 360.0f)) > 90.0f;
+  const bool current_pitch_oob = std::fabs(std::remainder(user_cmd->view_angles.x, 360.0f)) > 90.0f;
+  const float side_move = original_side_move * (original_pitch_oob ? -1.0f : 1.0f);
+  const float move_speed = std::hypot(original_forward_move, side_move);
+  if (move_speed <= 0.001f) {
+    user_cmd->forwardmove = 0.0f;
+    user_cmd->sidemove = 0.0f;
+    return;
   }
-  yaw_delta = 360.0f - yaw_delta;
 
-  user_cmd->forwardmove = cos((yaw_delta) * (M_PI/180)) * original_forward_move + cos((yaw_delta + 90.f) * (M_PI/180)) * original_side_move;
-  user_cmd->sidemove = sin((yaw_delta) * (M_PI/180)) * original_forward_move + sin((yaw_delta + 90.f) * (M_PI/180)) * original_side_move;
+  const float move_yaw = std::atan2(side_move, original_forward_move) * radpi;
+  const float original_yaw = original_view_angle.y + (original_pitch_oob ? 180.0f : 0.0f);
+  const float current_yaw = user_cmd->view_angles.y + (current_pitch_oob ? 180.0f : 0.0f);
+  const float yaw = (current_yaw - original_yaw + move_yaw) * pideg;
+
+  user_cmd->forwardmove = std::cos(yaw) * move_speed;
+  user_cmd->sidemove = std::sin(yaw) * move_speed * (current_pitch_oob ? -1.0f : 1.0f);
 }
 
 static bool should_block_menu_movement() {
@@ -119,6 +115,7 @@ static bool should_run_taunt_slide(Player* localplayer) {
 }
 
 static bool run_move_features(user_cmd* user_cmd) {
+  clear_aimbot_active_target();
   const Vec3 original_view_angles = user_cmd->view_angles;
 
   force_aimbot_autoreload_convar();

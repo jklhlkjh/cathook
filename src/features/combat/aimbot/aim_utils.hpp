@@ -315,6 +315,10 @@ inline bool aimbot_headshot_ready_for_priority(Player* localplayer, Weapon* weap
     return false;
   }
 
+  if (weapon->can_fire_critical_shot(true)) {
+    return true;
+  }
+
   if (weapon->is_sniper_rifle()) {
     if (attribute_manager != nullptr && attribute_manager->attrib_hook_value(0, "sniper_no_headshot_without_full_charge", weapon->to_entity()) != 0) {
       return weapon->get_charged_damage() >= 150.0f;
@@ -1040,9 +1044,7 @@ inline bool aimbot_scoped_only_ready(Player* localplayer, Weapon* weapon) {
   if (localplayer == nullptr || weapon == nullptr) return false;
   const bool scoped_hitscan_rifle = aimbot_is_scoped_hitscan_rifle(weapon);
   if (localplayer->is_scoped()) {
-    return !config.aimbot.scoped_only ||
-      !scoped_hitscan_rifle ||
-      aimbot_headshot_ready_for_priority(localplayer, weapon);
+    return true;
   }
   if (aimbot_weapon_requires_scope(weapon)) return false;
   if (!config.aimbot.scoped_only) return true;
@@ -1052,6 +1054,10 @@ inline bool aimbot_scoped_only_ready(Player* localplayer, Weapon* weapon) {
 inline bool aimbot_sniper_headshot_ready(Player* localplayer, Weapon* weapon) {
   if (localplayer == nullptr || weapon == nullptr) {
     return false;
+  }
+
+  if (weapon->can_fire_critical_shot(true)) {
+    return true;
   }
 
   if (attribute_manager != nullptr && attribute_manager->attrib_hook_value(0, "sniper_no_headshot_without_full_charge", weapon->to_entity()) != 0) {

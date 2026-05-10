@@ -66,7 +66,8 @@ bool should_run_network_fix()
          client_state != nullptr &&
          global_vars != nullptr &&
          engine->is_in_game() &&
-         client_state->m_NetChannel != nullptr;
+         client_state->m_NetChannel != nullptr &&
+         !client_state->m_NetChannel->is_loopback();
 }
 
 } // namespace
