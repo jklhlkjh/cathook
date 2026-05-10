@@ -41,7 +41,7 @@ Make sure to run chmod +x [NAME] if it says permissions denied.
 Clone the repository by using:
 
 ```
-git clone https://github.com/jklhlkjh/cathook
+git clone https://github.com/jklhlkjh/cathook.git
 ```
 
 Install build dependencies for your distro:
